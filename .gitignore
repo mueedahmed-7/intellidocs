@@ -1,7 +1,18 @@
-files/
+# Virtual Environment
+.venv/
+venv/
+ENV/
 
-test.ipynb
-
+# Python Cache
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 
+# Environment
 .env
+
+# Local files
+files/
+test.ipynb
