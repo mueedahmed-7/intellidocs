@@ -36,9 +36,8 @@ def compare_against_registered_embeddings(
 
     Supports:
 
-        (128,)    -> old single-angle registration
-
-        (3, 128)  -> new multi-angle registration
+        (128,)    -> single-angle registration
+        (3, 128)  -> multi-angle registration
 
     The highest cosine similarity is used as the best match.
     """
@@ -46,7 +45,7 @@ def compare_against_registered_embeddings(
     saved_embeddings = np.asarray(saved_embeddings)
 
     # ------------------------------------------------------------
-    # OLD SINGLE-ANGLE REGISTRATION
+    # SINGLE-ANGLE REGISTRATION
     # ------------------------------------------------------------
 
     if saved_embeddings.ndim == 1:
@@ -64,7 +63,7 @@ def compare_against_registered_embeddings(
         )
 
     # ------------------------------------------------------------
-    # NEW MULTI-ANGLE REGISTRATION
+    # MULTI-ANGLE REGISTRATION
     # ------------------------------------------------------------
 
     if saved_embeddings.ndim == 2:
@@ -91,7 +90,6 @@ def compare_against_registered_embeddings(
                 )
             )
 
-            # Keep the strongest similarity
             if cos_sim > best_cosine:
 
                 best_cosine = cos_sim
@@ -136,7 +134,7 @@ def draw_face_box(
         2,
     )
 
-    # Draw YuNet landmarks
+    # YuNet landmarks
     for index in range(5):
 
         lx = int(
@@ -186,7 +184,15 @@ def draw_status(
     )
 
 
-def main():
+def verify_face():
+    """
+    Main reusable face verification function.
+
+    Returns:
+        True  -> face matched
+        False -> face did not match, was cancelled,
+                 or verification failed
+    """
 
     print("=" * 60)
     print("       AUTOMATIC MULTI-ANGLE FACE VERIFICATION")
@@ -215,7 +221,7 @@ def main():
             "python -m member3.face.register_face"
         )
 
-        return
+        return False
 
     print("Registered users:")
 
@@ -239,7 +245,7 @@ def main():
             "is not registered."
         )
 
-        return
+        return False
 
     # ------------------------------------------------------------
     # LOAD REGISTERED EMBEDDINGS
@@ -282,7 +288,7 @@ def main():
                 "[ERROR] Invalid embedding format."
             )
 
-            return
+            return False
 
     except Exception as e:
 
@@ -291,7 +297,7 @@ def main():
             f"face representation: {e}"
         )
 
-        return
+        return False
 
     # ------------------------------------------------------------
     # START CAMERA
@@ -311,7 +317,7 @@ def main():
             f"[ERROR] {e}"
         )
 
-        return
+        return False
 
     # Get initial frame
     ret, frame = cap.read()
@@ -325,7 +331,7 @@ def main():
 
         cap.release()
 
-        return
+        return False
 
     h, w, _ = frame.shape
 
@@ -350,7 +356,7 @@ def main():
 
         cap.release()
 
-        return
+        return False
 
     print(
         "\n[INFO] Camera ready."
@@ -401,21 +407,18 @@ def main():
                 "[ERROR] Webcam feed interrupted."
             )
 
+            result = "NOT MATCH"
             break
 
         display_frame = frame.copy()
 
         # --------------------------------------------------------
-        # IF RESULT ALREADY EXISTS
+        # RESULT ALREADY EXISTS
         # --------------------------------------------------------
 
         if result is not None:
 
             if result == "MATCH":
-
-                # -----------------------------------------------
-                # MATCH SCREEN
-                # -----------------------------------------------
 
                 draw_status(
                     display_frame,
@@ -438,7 +441,7 @@ def main():
                     display_frame,
                 )
 
-                # Match result shown briefly
+                # MATCH screen stays for 2 seconds
                 if (
                     time.time() - result_time
                     >= 2
@@ -448,9 +451,9 @@ def main():
 
             else:
 
-                # -----------------------------------------------
+                # ------------------------------------------------
                 # NOT MATCH SCREEN
-                # -----------------------------------------------
+                # ------------------------------------------------
 
                 elapsed = (
                     time.time()
@@ -473,7 +476,7 @@ def main():
 
                 cv2.putText(
                     display_frame,
-                    f"Verification Failed",
+                    "Verification Failed",
                     (20, 85),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
@@ -508,6 +511,7 @@ def main():
                 27,
             ]:
 
+                result = "NOT MATCH"
                 break
 
             continue
@@ -582,9 +586,9 @@ def main():
                 (0, 255, 0),
             )
 
-            # -----------------------------------------------
+            # ----------------------------------------------------
             # START STABILITY TIMER
-            # -----------------------------------------------
+            # ----------------------------------------------------
 
             if face_detected_since is None:
 
@@ -602,9 +606,9 @@ def main():
                 - face_detected_since
             )
 
-            # -----------------------------------------------
-            # VERIFY AFTER STABLE FACE
-            # -----------------------------------------------
+            # ----------------------------------------------------
+            # AUTOMATIC VERIFICATION
+            # ----------------------------------------------------
 
             if (
                 stable_time
@@ -621,9 +625,9 @@ def main():
 
                 try:
 
-                    # ---------------------------------------
+                    # --------------------------------------------
                     # EXTRACT LIVE EMBEDDING
-                    # ---------------------------------------
+                    # --------------------------------------------
 
                     current_embedding = (
                         extract_embedding(
@@ -633,9 +637,9 @@ def main():
                         )
                     )
 
-                    # ---------------------------------------
+                    # --------------------------------------------
                     # COMPARE
-                    # ---------------------------------------
+                    # --------------------------------------------
 
                     (
                         is_match,
@@ -649,9 +653,9 @@ def main():
                         )
                     )
 
-                    # ---------------------------------------
+                    # --------------------------------------------
                     # PRINT TECHNICAL RESULT
-                    # ---------------------------------------
+                    # --------------------------------------------
 
                     print(
                         "\n" + "=" * 55
@@ -689,9 +693,9 @@ def main():
                         f"{MATCH_L2_THRESHOLD}"
                     )
 
-                    # ---------------------------------------
-                    # RESULT
-                    # ---------------------------------------
+                    # --------------------------------------------
+                    # SET RESULT
+                    # --------------------------------------------
 
                     if is_match:
 
@@ -711,9 +715,7 @@ def main():
 
                     print("=" * 55)
 
-                    result_time = (
-                        time.time()
-                    )
+                    result_time = time.time()
 
                 except Exception as e:
 
@@ -724,9 +726,7 @@ def main():
 
                     result = "NOT MATCH"
 
-                    result_time = (
-                        time.time()
-                    )
+                    result_time = time.time()
 
         # --------------------------------------------------------
         # FOOTER
@@ -763,6 +763,7 @@ def main():
                 "[INFO] Verification cancelled."
             )
 
+            result = "NOT MATCH"
             break
 
     # ------------------------------------------------------------
@@ -780,6 +781,34 @@ def main():
     print(
         "[INFO] Verification process finished."
     )
+
+    # ------------------------------------------------------------
+    # RETURN VALUE FOR INTEGRATION
+    # ------------------------------------------------------------
+
+    return result == "MATCH"
+
+
+def main():
+
+    verified = verify_face()
+
+    print(
+        f"\n[RESULT] Verification returned: "
+        f"{verified}"
+    )
+
+    if verified:
+
+        print(
+            "[RESULT] Access granted."
+        )
+
+    else:
+
+        print(
+            "[RESULT] Access denied."
+        )
 
 
 if __name__ == "__main__":
