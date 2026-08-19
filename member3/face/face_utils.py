@@ -1,6 +1,8 @@
 import sys
 import urllib.request
+# pyrefly: ignore [missing-import]
 import cv2
+# pyrefly: ignore [missing-import]
 import numpy as np
 from pathlib import Path
 from .config import (
