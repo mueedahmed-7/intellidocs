@@ -9,13 +9,9 @@ import numpy as np
 import sounddevice as sd
 # pyrefly: ignore [missing-import]
 import scipy.io.wavfile as wav
-# pyrefly: ignore [missing-import]
-import whisper
-# pyrefly: ignore [missing-import]
-import noisereduce as nr
 
 
-# Global cache for the Whisper model
+# Whisper model cache
 _model_cache = {}
 
 SAMPLE_RATE = 16000
@@ -24,28 +20,41 @@ CHANNELS = 1
 
 def get_whisper_model(model_size: str = "tiny"):
     """
-    Loads the Whisper model once and reuses it.
+    Loads Whisper only when it is actually needed.
+    The model is then kept in memory for later calls.
     """
 
     global _model_cache
 
     if model_size not in _model_cache:
-        print(f"[INFO] Loading Whisper '{model_size}' model...")
-        _model_cache[model_size] = whisper.load_model(model_size)
+
+        print(
+            f"[INFO] Loading Whisper '{model_size}' model..."
+        )
+
+        # Lazy import: Whisper is not loaded at startup
+        # pyrefly: ignore [missing-import]
+        import whisper
+
+        _model_cache[model_size] = whisper.load_model(
+            model_size
+        )
+
+        print("[INFO] Whisper model ready.")
 
     return _model_cache[model_size]
 
 
-def record_voice_note() -> str:
+def record_voice() -> np.ndarray:
     """
     Records microphone audio until the user presses S.
 
     Returns:
-        str: Path to the temporary WAV file.
+        np.ndarray: Recorded audio as int16 samples.
     """
 
     print("\n" + "=" * 60)
-    print("                VOICE NOTE MODE")
+    print("                VOICE INPUT")
     print("=" * 60)
 
     input("Press ENTER to start recording...")
@@ -58,6 +67,7 @@ def record_voice_note() -> str:
     audio_chunks = []
 
     def callback(indata, frames, time_info, status):
+
         if status:
             print(f"[WARNING] {status}")
 
@@ -103,33 +113,36 @@ def record_voice_note() -> str:
             "No audio was recorded."
         )
 
-    # Combine recorded chunks
-    audio_data = np.concatenate(
+    return np.concatenate(
         audio_chunks,
         axis=0
     )
 
-    print(
-        "[INFO] Recording captured."
-    )
 
-    # Convert int16 audio to float32
-    audio_float = (
-        audio_data.astype(np.float32)
-        / 32768.0
-    )
+def reduce_noise(audio_data: np.ndarray) -> np.ndarray:
+    """
+    Reduces steady background noise.
 
-    # --------------------------------------------------
-    # NOISE REDUCTION
-    # --------------------------------------------------
+    noisereduce is imported only when this function
+    is actually called.
+    """
 
     print(
         "[INFO] Removing background noise..."
     )
 
+    # Lazy import
+    # pyrefly: ignore [missing-import]
+    import noisereduce as nr
+
+    audio_float = (
+        audio_data.astype(np.float32)
+        / 32768.0
+    )
+
     try:
 
-        reduced_audio = nr.reduce_noise(
+        cleaned_audio = nr.reduce_noise(
             y=audio_float,
             sr=SAMPLE_RATE,
             stationary=True
@@ -142,97 +155,129 @@ def record_voice_note() -> str:
         )
 
         print(
-            "[INFO] Continuing with original audio."
+            "[INFO] Using original audio."
         )
 
-        reduced_audio = audio_float
+        cleaned_audio = audio_float
 
-    # Convert back to int16 for WAV
-    reduced_audio = np.clip(
-        reduced_audio,
+    cleaned_audio = np.clip(
+        cleaned_audio,
         -1.0,
         1.0
     )
 
-    reduced_audio = np.int16(
-        reduced_audio * 32767
+    return np.int16(
+        cleaned_audio * 32767
     )
 
-    # Create temporary WAV file
-    fd, temp_wav_path = tempfile.mkstemp(
-        suffix=".wav"
-    )
 
-    os.close(fd)
-
-    wav.write(
-        temp_wav_path,
-        SAMPLE_RATE,
-        reduced_audio
-    )
-
-    print(
-        "[INFO] Cleaned audio saved temporarily."
-    )
-
-    return temp_wav_path
-
-
-def transcribe_voice_note(temp_wav_path: str) -> str:
+def transcribe_audio(audio_data: np.ndarray) -> str:
     """
-    Transcribes the cleaned voice note using Whisper.
+    Saves cleaned audio temporarily and transcribes it
+    using Whisper.
+
+    Returns:
+        str: Recognized text.
     """
-
-    model = get_whisper_model("tiny")
-
-    print(
-        "\n[INFO] Transcribing voice note..."
-    )
-
-    result = model.transcribe(
-        temp_wav_path,
-        fp16=False
-    )
-
-    return result.get(
-        "text",
-        ""
-    ).strip()
-
-
-def main():
 
     temp_wav_path = None
 
     try:
 
-        temp_wav_path = record_voice_note()
+        fd, temp_wav_path = tempfile.mkstemp(
+            suffix=".wav"
+        )
+
+        os.close(fd)
+
+        wav.write(
+            temp_wav_path,
+            SAMPLE_RATE,
+            audio_data
+        )
 
         print(
-            "\n[INFO] Recording completed."
+            "[INFO] Transcribing audio..."
         )
 
-        transcription = transcribe_voice_note(
+        model = get_whisper_model("tiny")
+
+        result = model.transcribe(
+            temp_wav_path,
+            fp16=False
+        )
+
+        return result.get(
+            "text",
+            ""
+        ).strip()
+
+    finally:
+
+        if (
             temp_wav_path
+            and os.path.exists(temp_wav_path)
+        ):
+
+            try:
+
+                os.remove(temp_wav_path)
+
+            except Exception:
+                pass
+
+
+def transcribe_voice_note() -> str:
+    """
+    Main integration function.
+
+    Records the user's voice, removes background noise,
+    transcribes the audio, and returns the recognized text.
+
+    Returns:
+        str: Transcribed user input.
+    """
+
+    audio_data = record_voice()
+
+    cleaned_audio = reduce_noise(
+        audio_data
+    )
+
+    text = transcribe_audio(
+        cleaned_audio
+    )
+
+    print("\n" + "=" * 60)
+    print("                  TRANSCRIPTION")
+    print("=" * 60)
+
+    if text:
+
+        print(
+            f'Recognized Text: "{text}"'
         )
 
-        print("\n" + "=" * 60)
-        print("                  TRANSCRIPTION RESULT")
-        print("=" * 60)
+    else:
 
-        if transcription:
+        print(
+            "[WARNING] No speech detected."
+        )
 
-            print(
-                f'Recognized Text: "{transcription}"'
-            )
+    print("=" * 60)
 
-        else:
+    return text
 
-            print(
-                "[WARNING] No speech detected."
-            )
 
-        print("=" * 60)
+def main():
+
+    try:
+
+        text = transcribe_voice_note()
+
+        print(
+            f"\n[RESULT] Returned text: {text}"
+        )
 
     except KeyboardInterrupt:
 
@@ -245,29 +290,6 @@ def main():
         print(
             f"\n[ERROR] An error occurred: {e}"
         )
-
-    finally:
-
-        # Delete temporary WAV file
-        if (
-            temp_wav_path
-            and os.path.exists(temp_wav_path)
-        ):
-
-            try:
-
-                os.remove(temp_wav_path)
-
-                print(
-                    "[INFO] Temporary audio file cleaned up."
-                )
-
-            except Exception as e:
-
-                print(
-                    f"[WARNING] Could not delete "
-                    f"temporary file: {e}"
-                )
 
 
 if __name__ == "__main__":
