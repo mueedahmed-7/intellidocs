@@ -101,7 +101,8 @@ class Retriever:
                     "distance": distance,
                 }
             )
-
+        print(f"Retrieved {len(retrieved_chunks)} relevant chunks.")
+        print(f"Retrieved Chunks: {retrieved_chunks}")
         return retrieved_chunks
 
     def retrieve_document(
