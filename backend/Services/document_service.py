@@ -68,6 +68,7 @@ class DocumentService:
         # 3. Add user ID to metadata
         for chunk in chunks:
             chunk.metadata["user_id"] = str(user_id)
+            chunk.metadata["filename"] = Path(file_path).name
 
         # 4. Generate embeddings
         embeddings = (
