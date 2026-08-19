@@ -22,7 +22,7 @@ class VectorStore:
 
     def __init__(
         self,
-        collection_name: str = "Rag Chatbot Collection",
+        collection_name: str = "Rag_Chatbot_Collection",
         persist_directory: str = "./chroma_db",
     ):
         """
@@ -56,15 +56,10 @@ class VectorStore:
         logger.info("=" * 50)
 
     def add_documents(
-            self,
-            chunks: List[Document],
-            embeddings: np.ndarray,
-            user_id: str | None = None,
-            filename: str | None = None,
-            chat_id: str | None = None,
-        ):
-                
-    
+        self,
+        chunks: List[Document],
+        embeddings: np.ndarray,
+    ):
         """
         Store document chunks and their embeddings.
 
@@ -77,31 +72,26 @@ class VectorStore:
             raise ValueError(
                 "Number of chunks and embeddings must be equal."
             )
+        if not chunks:
+            return
 
         ids = []
         documents = []
         metadatas = []
         vectors = []
 
-        current_count = self.collection.count()
-
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        for chunk, embedding in zip(chunks, embeddings):
 
             ids.append(str(uuid.uuid4()))
 
             documents.append(chunk.page_content)
 
             metadata = dict(chunk.metadata)
-            if user_id is not None:
-                metadata["user_id"] = str(user_id)
-            if filename is not None:
-                metadata["filename"] = str(filename)
-            if chat_id is not None:
-                metadata["chat_id"] = str(chat_id)
+            
             
             metadatas.append(metadata)
 
-            vectors.append(embedding.tolist())
+            vectors.append(np.asarray(embedding).tolist())
 
         self.collection.add(
             ids=ids,
@@ -117,8 +107,6 @@ class VectorStore:
         self,
         query_embedding: np.ndarray,
         top_k: int = 5,
-        user_id: str | None = None,
-        chat_id: str | None = None,
     ):
         """
         Retrieve the most similar chunks.
@@ -130,15 +118,13 @@ class VectorStore:
         Returns:
             ChromaDB query results.
         """
-        where = self._build_where(user_id=user_id, chat_id=chat_id)
+        if not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be a positive integer.")
 
         query_args = {
-            "query_embeddings": [query_embedding.tolist()],
+            "query_embeddings": [np.asarray(query_embedding).tolist()],
             "n_results": top_k,
         }
-        if where is not None:
-            query_args["where"] = where
-
         results = self.collection.query(**query_args)
 
         return results
@@ -152,23 +138,11 @@ class VectorStore:
 
     @staticmethod
     def _build_where(
-        user_id: str | None = None,
-        chat_id: str | None = None,
         filename: str | None = None,
     ) -> dict | None:
-        filters = []
-        if user_id is not None:
-            filters.append({"user_id": str(user_id)})
-        if chat_id is not None:
-            filters.append({"chat_id": str(chat_id)})
-        if filename is not None:
-            filters.append({"filename": str(filename)})
-
-        if not filters:
+        if filename is None:
             return None
-        if len(filters) == 1:
-            return filters[0]
-        return {"$and": filters}
+        return {"filename": str(filename)}
 
     def get_all_documents(self):
         """
@@ -209,51 +183,27 @@ class VectorStore:
 
         logger.info("Collection has been reset successfully.")
 
-    def delete_chat_vectors(
-        self,
-        user_id: str | None = None,
-        chat_id: str | None = None,
-    ):
-        """
-        Delete all vectors belonging to a specific chat.
-        """
-
-        where = self._build_where(user_id=user_id, chat_id=chat_id)
-        if where is None:
-            raise ValueError("Provide user_id or chat_id before deleting vectors.")
-        self.collection.delete(where=where)
-
-        logger.info(f"Deleted vectors of chat {chat_id}")
-
     def delete_document_vectors(
         self,
-        user_id: str | None = None,
-        chat_id: str | None = None,
-        filename: str | None = None,
+        filename: str,
     ):
         """
         Delete vectors belonging to a specific document.
         """
 
-        where = self._build_where(
-            user_id=user_id,
-            chat_id=chat_id,
-            filename=filename,
-        )
-        if where is None:
-            raise ValueError("Provide at least one filter before deleting vectors.")
+        where = self._build_where(filename=filename)
         self.collection.delete(where=where)
+        logger.info(f"Deleted vectors for document {filename}")
 
-    def get_chat_documents(
+    def get_documents(
         self,
-        user_id: str | None = None,
-        chat_id: str | None = None,
+        filename: str | None = None,
     ):
         """
-        Return every chunk belonging to a chat.
+        Return stored chunks, optionally filtered by filename.
         """
 
-        where = self._build_where(user_id=user_id, chat_id=chat_id)
+        where = self._build_where(filename=filename)
         if where is None:
             return self.collection.get()
         return self.collection.get(where=where)
