@@ -21,6 +21,7 @@ class Retriever:
         self,
         embedding_manager: EmbeddingManager,
         vector_store: VectorStore,
+        distance_threshold: float = 1.5
     ):
         """
         Initialize the retriever.
@@ -28,11 +29,12 @@ class Retriever:
         Args:
             embedding_manager: EmbeddingManager instance.
             vector_store: VectorStore instance.
+            distance_threshold: Threshold for considering a document relevant.
         """
 
         self.embedding_manager = embedding_manager
         self.vector_store = vector_store
-
+        self.distance_threshold = distance_threshold
     def retrieve(
         self,
         query: str,
@@ -65,25 +67,12 @@ class Retriever:
         metadatas = results.get("metadatas", [[]])[0]
         distances = results.get("distances", [[]])[0]
 
-        # Temporary: inspect distances during testing
-        print("RETRIEVAL RESULTS:")
-
-        for doc, metadata, distance in zip(
-            documents,
-            metadatas,
-            distances,
-        ):
-            print(
-                f"Distance: {distance} | "
-                f"File: {metadata.get('filename')} | "
-                f"Page: {metadata.get('page')}"
-            )
 
         # ------------------------------------------------
         # Relevance threshold
         # ------------------------------------------------
 
-        DISTANCE_THRESHOLD = 1.5
+        
 
         for doc, metadata, distance in zip(
             documents,
@@ -91,7 +80,7 @@ class Retriever:
             distances,
         ):
 
-            if distance > DISTANCE_THRESHOLD:
+            if distance > self.distance_threshold:
                 continue
 
             retrieved_chunks.append(

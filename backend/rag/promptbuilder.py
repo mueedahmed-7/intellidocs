@@ -68,6 +68,7 @@ Respond naturally, professionally, and conversationally.
         self,
         query: str,
         retrieved_chunks: List[Dict],
+        conversation_history: str = "",
     ) -> str:
         """
         Build the final prompt.
@@ -80,13 +81,13 @@ Respond naturally, professionally, and conversationally.
             Complete prompt string.
         """
         
+        if not conversation_history:
+            conversation_history = "No previous conversation."
 
         if not retrieved_chunks:
-            print("No relevant context found.")
             context = "No relevant context found."
 
         else:
-            print(f"Retrieved Chunks: {retrieved_chunks}")
             context = ""
 
             for i, chunk in enumerate(retrieved_chunks, start=1):
@@ -102,7 +103,7 @@ Respond naturally, professionally, and conversationally.
 ==============================
 Conversation History
 ==============================
-
+{conversation_history}
 =========================
 CONTEXT
 =========================

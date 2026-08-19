@@ -63,7 +63,7 @@ class ChatEngine:
         self,
         question: str,
         top_k: int = 5,
-    ) -> str:
+    ) -> dict:
         """
         Complete RAG pipeline.
 
@@ -104,4 +104,11 @@ class ChatEngine:
         
         return {
             "answer": answer,
+            "sources": [
+                {
+                    "metadata": chunk["metadata"],
+                    "distance": chunk["distance"],
+                }
+                for chunk in retrieved_chunks
+            ],
         }
