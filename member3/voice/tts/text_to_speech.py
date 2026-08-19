@@ -1,57 +1,56 @@
+
+# pyrefly: ignore [missing-import]
 import pyttsx3
 
 
 def speak_text(text: str) -> None:
     """Speak the given text using Microsoft Zira on Windows."""
 
-    if not text.strip():
+    if not text or not text.strip():
         return
 
     print(f'[INFO] Speaking: "{text}"')
 
-    engine = pyttsx3.init("sapi5")
+    try:
+        engine = pyttsx3.init("sapi5")
 
-    # Get all installed Windows voices
-    voices = engine.getProperty("voices")
+        # Find Microsoft Zira
+        voices = engine.getProperty("voices")
+        zira_voice = None
 
-    print("\n[INFO] Available voices:")
-    for i, voice in enumerate(voices):
-        print(f"  {i}: {voice.name}")
-        print(f"     ID: {voice.id}")
+        for voice in voices:
+            if voice.name and "zira" in voice.name.lower():
+                zira_voice = voice
+                break
 
-    # Find Microsoft Zira
-    zira_voice = None
+        if zira_voice is None:
+            print("[ERROR] Microsoft Zira was not found.")
+            engine.stop()
+            return
 
-    for voice in voices:
-        name = voice.name.lower()
+        # Select Zira
+        engine.setProperty("voice", zira_voice.id)
 
-        if "zira" in name:
-            zira_voice = voice
-            break
+        # Slightly slower for more natural speech
+        engine.setProperty("rate", 135)
 
-    if zira_voice is None:
-        print("\n[ERROR] Microsoft Zira was not found.")
-        print("[ERROR] Available voices are listed above.")
+        # Full volume
+        engine.setProperty("volume", 1.0)
+
+        print(f"[INFO] Selected voice: {zira_voice.name}")
+        print(f"[INFO] Speech rate: {engine.getProperty('rate')}")
+
+        # Give very short text a little more natural pacing
+        if len(text.strip().split()) <= 3:
+            text = text.strip().rstrip(".!?") + "."
+
+        engine.say(text)
+        engine.runAndWait()
+
         engine.stop()
-        return
 
-    # Select Zira
-    engine.setProperty("voice", zira_voice.id)
-
-    # Slow down the speech
-    engine.setProperty("rate", 145)
-
-    # Maximum volume
-    engine.setProperty("volume", 1.0)
-
-    print(f"\n[INFO] Selected voice: {zira_voice.name}")
-    print(f"[INFO] Voice ID: {zira_voice.id}")
-    print(f"[INFO] Speech rate: {engine.getProperty('rate')}")
-
-    engine.say(text)
-    engine.runAndWait()
-
-    engine.stop()
+    except Exception as e:
+        print(f"[ERROR] Text-to-speech failed: {e}")
 
 
 def main():
@@ -59,9 +58,19 @@ def main():
     print("       PHASE 2B: TEXT-TO-SPEECH PROTOTYPE")
     print("=" * 60)
 
-    test_sentence = "Hello. This is a test."
+    test_sentences = [
+        "Hello.",
+        "Hello, how are you?",
+        "Hello. This is a test of the text to speech module."
+    ]
 
-    speak_text(test_sentence)
+    print("\n[INFO] Testing Microsoft Zira...\n")
+
+    for sentence in test_sentences:
+        print(f'[TEST] "{sentence}"')
+        speak_text(sentence)
+
+    print("\n[INFO] TTS testing completed.")
 
 
 if __name__ == "__main__":
