@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentLoader:
-    """
-    Handles loading documents from disk.
-    """
+    
 
     SUPPORTED_EXTENSIONS = {
         ".pdf",
@@ -40,15 +38,7 @@ class DocumentLoader:
         pass
 
     def load_document(self, file_path: str) -> List[Document]:
-        """
-        Load a single document.
-
-        Args:
-            file_path: Path to the document.
-
-        Returns:
-            List of LangChain Document objects.
-        """
+        
 
         path = Path(file_path)
 
@@ -80,15 +70,7 @@ class DocumentLoader:
         return documents
 
     def load_directory(self, directory: str) -> List[Document]:
-        """
-        Load every supported document inside a directory recursively.
-
-        Args:
-            directory: Folder containing documents.
-
-        Returns:
-            List of LangChain Documents.
-        """
+        
 
         directory = Path(directory)
 
