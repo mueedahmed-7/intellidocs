@@ -5,12 +5,14 @@ import cv2
 # pyrefly: ignore [missing-import]
 import numpy as np
 
+# pyrefly: ignore [missing-import]
 from .config import (
     DATA_DIR,
     MATCH_COSINE_THRESHOLD,
     MATCH_L2_THRESHOLD,
 )
 
+# pyrefly: ignore [missing-import]
 from .face_utils import (
     init_webcam,
     get_face_detector,
