@@ -67,3 +67,36 @@ class AuthService:
             "name": user["name"],
             "email": user["email"],
         }
+    @staticmethod
+    def login_user(
+        email: str,
+        password: str,
+    ):
+        email = AuthService.normalize_email(email)
+
+        # Find user
+        user = users_collection.find_one(
+            {"email": email}
+        )
+
+        if not user:
+            raise ValueError(
+                "Invalid email or password."
+            )
+
+        # Verify password
+        password_valid = AuthService.verify_password(
+            password,
+            user["password"],
+        )
+
+        if not password_valid:
+            raise ValueError(
+                "Invalid email or password."
+            )
+
+        return {
+            "id": str(user["_id"]),
+            "name": user["name"],
+            "email": user["email"],
+        }

@@ -11,11 +11,14 @@ from api.schemas import (
     ChatResponse,
     UploadResponse,
     RegisterRequest,
+    LoginRequest,
+    LoginResponse,
 )
 
 from Services.auth_service import AuthService
 from services import chat_engine
 from Services.document_service import DocumentService
+from utils.jwt_handler import create_access_token
 
 
 
@@ -135,3 +138,34 @@ def upload_document(
 
     finally:
         file.file.close()
+
+@router.post(
+    "/auth/login",
+    response_model=LoginResponse,
+)
+def login(
+    request: LoginRequest,
+):
+
+    try:
+
+        user = AuthService.login_user(
+            email=request.email,
+            password=request.password,
+        )
+
+        token = create_access_token(
+            user_id=user["id"],
+        )
+
+        return LoginResponse(
+            access_token=token,
+            token_type="bearer",
+        )
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=401,
+            detail=str(e),
+        )
