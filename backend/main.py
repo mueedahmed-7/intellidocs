@@ -27,7 +27,11 @@ from member3.face.config import (
 )
 
 
-app = FastAPI()
+app = FastAPI(
+    title = "AI RAG Chatbot API",
+    description = "Backend API for an AI-powered RAG Chatbot",
+    version = "1.0.0",
+)
 
 
 # ============================================================
@@ -53,7 +57,7 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {
-        "message": "RAG Chatbot Backend is running"
+        "message": "AI RAG Chatbot Backend Running"
     }
 
 
