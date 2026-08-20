@@ -6,7 +6,14 @@ from fastapi import (
     File,
     HTTPException,
 )
-from api.schemas import ChatRequest, ChatResponse, UploadResponse
+from api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    UploadResponse,
+    RegisterRequest,
+)
+
+from Services.auth_service import AuthService
 from services import chat_engine
 from Services.document_service import DocumentService
 
@@ -23,6 +30,31 @@ ALLOWED_EXTENSIONS = {
     ".txt",
     ".md",
 }
+
+@router.post("/auth/register")
+def register(
+    request: RegisterRequest,
+):
+
+    try:
+
+        user = AuthService.register_user(
+            name=request.name,
+            email=request.email,
+            password=request.password,
+        )
+
+        return {
+            "message": "User registered successfully.",
+            "user": user,
+        }
+
+    except ValueError as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
 @router.post(
     "/chat",
