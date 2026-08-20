@@ -1,0 +1,6 @@
+numpy>=2.0.0
+opencv-python>=4.8.0.0
+openai-whisper
+sounddevice
+scipy
+pyttsx3
