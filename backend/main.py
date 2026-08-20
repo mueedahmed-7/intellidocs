@@ -3,6 +3,12 @@ from fastapi import FastAPI, Form
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from api.routes import router
 from member3.voice.tts.text_to_speech import speak_text
 
@@ -14,6 +20,7 @@ from pathlib import Path
 import cv2
 # pyrefly: ignore [missing-import]
 import numpy as np
+
 
 from member3.face.face_utils import (
     get_face_detector,
