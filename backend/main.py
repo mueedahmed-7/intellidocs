@@ -2,8 +2,9 @@
 from fastapi import FastAPI, Form
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
-from member3.voice.tts.text_to_speech import speak_text
 
+from api.routes import router
+from member3.voice.tts.text_to_speech import speak_text
 
 import subprocess
 import sys
@@ -28,9 +29,9 @@ from member3.face.config import (
 
 
 app = FastAPI(
-    title = "AI RAG Chatbot API",
-    description = "Backend API for an AI-powered RAG Chatbot",
-    version = "1.0.0",
+    title="AI RAG Chatbot API",
+    description="Backend API for an AI-powered RAG chatbot.",
+    version="1.0.0",
 )
 
 
@@ -48,6 +49,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(router)
 
 
 # ============================================================
@@ -543,6 +547,12 @@ def face_login():
             "success": False,
             "message": str(e),
         }
+
+
+# ============================================================
+# VOICE
+# ============================================================
+
 @app.post("/voice/speak")
 async def voice_speak(text: str = Form(...)):
     try:
