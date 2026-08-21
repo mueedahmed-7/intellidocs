@@ -63,6 +63,7 @@ class ChatEngine:
         self,
         question: str,
         top_k: int = 5,
+        user_id: str | None = None,
     ) -> dict:
         """
         Complete RAG pipeline.
@@ -74,14 +75,30 @@ class ChatEngine:
         Returns:
             LLM response.
         """
-        # -----------------------------
-        # Retrieve relevant chunks
-        # -----------------------------
+        summary_keywords = ("summarize", "summarise", "summary", "summerize")
+        is_summary_request = any(
+            keyword in question.lower() for keyword in summary_keywords
+        )
 
-        retrieved_chunks = self.retriever.retrieve(
-                        query=question,
-                        top_k=top_k,
-                    )
+        # A semantic search for "summarize my last uploaded file" often has no
+        # textual overlap with the document. Retrieve the latest owned document
+        # directly for summary requests; otherwise use normal semantic search.
+        if is_summary_request and user_id:
+            retrieved_chunks = self.retriever.retrieve_latest_document(
+                user_id=user_id,
+            )
+            if retrieved_chunks:
+                question = (
+                    "Provide a concise, well-structured summary of the user's "
+                    "most recently uploaded document. Cover its purpose, key "
+                    "points, and conclusions using only the supplied context."
+                )
+        else:
+            retrieved_chunks = self.retriever.retrieve(
+                query=question,
+                top_k=top_k,
+                user_id=user_id,
+            )
             
         # -----------------------------
         # Build prompt

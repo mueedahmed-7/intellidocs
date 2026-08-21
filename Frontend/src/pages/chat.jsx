@@ -674,10 +674,11 @@
 
 
 // export default Chat;
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_URL } from "../api";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = API_URL;
 
 let messageIdCounter = 0;
 function nextMessageId() {
@@ -703,6 +704,7 @@ function Chat() {
 
   // Which message is currently being spoken (null when nothing is playing)
   const [speakingId, setSpeakingId] = useState(null);
+  const ttsAbortControllerRef = useRef(null);
 
   // Waiting for the /chat API to respond
   const [isSending, setIsSending] = useState(false);
@@ -727,7 +729,10 @@ function Chat() {
   // ============================================================
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user_id");
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_email");
     navigate("/login");
   };
 
@@ -737,8 +742,14 @@ function Chat() {
 
   const handleSend = async () => {
     const question = inputText.trim();
+    const token = localStorage.getItem("access_token");
 
     if (!question || isSending) {
+      return;
+    }
+
+    if (!token) {
+      navigate("/login", { replace: true });
       return;
     }
 
@@ -758,6 +769,7 @@ function Chat() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           question,
@@ -767,6 +779,12 @@ function Chat() {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+          handleLogout();
+          return;
+        }
+
         throw new Error(
           errorBody?.detail || `Request failed with status ${response.status}.`
         );
@@ -842,6 +860,12 @@ function Chat() {
 
     const formData = new FormData();
     formData.append("file", file);
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
 
     setIsUploading(true);
     setStatusMessage(`Uploading "${file.name}"...`);
@@ -849,11 +873,20 @@ function Chat() {
     try {
       const response = await fetch(`${API_BASE_URL}/documents/upload`, {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
+
+        if (response.status === 401) {
+          handleLogout();
+          return;
+        }
+
         throw new Error(
           errorBody?.detail || `Upload failed with status ${response.status}.`
         );
@@ -885,10 +918,41 @@ function Chat() {
   // TEXT TO SPEECH -> POST /voice/speak
   // ============================================================
 
+  const handleStopSpeak = async () => {
+    const controller = ttsAbortControllerRef.current;
+    ttsAbortControllerRef.current = null;
+
+    if (controller) {
+      controller.abort();
+    }
+
+    setSpeakingId(null);
+    setStatusMessage("Speech stopped.");
+
+    try {
+      await fetch(`${API_BASE_URL}/voice/stop`, {
+        method: "POST",
+      });
+    } catch (error) {
+      // The local request was still cancelled, even if the stop endpoint is
+      // temporarily unreachable.
+      console.error("Could not stop server-side speech:", error);
+    }
+  };
+
   const handleSpeak = async (messageId, text) => {
-    if (speakingId) {
+    if (speakingId === messageId) {
+      await handleStopSpeak();
       return;
     }
+
+    if (speakingId) {
+      await handleStopSpeak();
+      return;
+    }
+
+    const controller = new AbortController();
+    ttsAbortControllerRef.current = controller;
 
     try {
       setSpeakingId(messageId);
@@ -900,6 +964,7 @@ function Chat() {
       const response = await fetch(`${API_BASE_URL}/voice/speak`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
 
       const result = await response.json();
@@ -911,12 +976,29 @@ function Chat() {
 
       setStatusMessage("Speech completed.");
     } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
       console.error("TTS error:", error);
       setStatusMessage("Could not connect to voice backend.");
     } finally {
-      setSpeakingId(null);
+      if (ttsAbortControllerRef.current === controller) {
+        ttsAbortControllerRef.current = null;
+        setSpeakingId(null);
+      }
     }
   };
+
+  useEffect(() => () => {
+    const controller = ttsAbortControllerRef.current;
+    if (controller) {
+      controller.abort();
+      fetch(`${API_BASE_URL}/voice/stop`, {
+        method: "POST",
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }, []);
 
   // ============================================================
   // SPEECH TO TEXT (browser Web Speech API)
@@ -1069,10 +1151,10 @@ function Chat() {
                 <button
                   className="speak-button"
                   onClick={() => handleSpeak(message.id, message.text)}
-                  disabled={speakingId !== null}
-                  title="Read answer aloud"
+                  title={speakingId === message.id ? "Stop reading" : "Read answer aloud"}
+                  type="button"
                 >
-                  {speakingId === message.id ? "🔊..." : "🔊"}
+                  {speakingId === message.id ? "⏹" : "🔊"}
                 </button>
               )}
             </div>

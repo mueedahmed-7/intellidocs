@@ -1,5 +1,27 @@
 # pyrefly: ignore [missing-import]
 import pyttsx3
+import threading
+
+
+_engine_lock = threading.Lock()
+_speech_run_lock = threading.Lock()
+_active_engine = None
+
+
+def stop_speaking() -> bool:
+    """Stop the currently active text-to-speech engine, if there is one."""
+    with _engine_lock:
+        engine = _active_engine
+
+    if engine is None:
+        return False
+
+    try:
+        engine.stop()
+        return True
+    except Exception as error:
+        print(f"[TTS STOP ERROR] {error}")
+        return False
 
 
 def get_zira_engine():
@@ -76,35 +98,35 @@ def speak_text(text: str) -> None:
         f'[INFO] Speaking: "{text}"'
     )
 
-    engine = None
+    global _active_engine
 
-    try:
+    # Only one server-side voice may run at a time. The separate stop endpoint
+    # can still call engine.stop() while this thread is in runAndWait().
+    with _speech_run_lock:
+        engine = None
 
-        engine = get_zira_engine()
+        try:
+            engine = get_zira_engine()
+            with _engine_lock:
+                _active_engine = engine
 
-        engine.say(
-            text.strip()
-        )
+            engine.say(text.strip())
+            engine.runAndWait()
 
-        engine.runAndWait()
+        except Exception as e:
+            print(f"[ERROR] Text-to-speech failed: {e}")
+            raise
 
-    except Exception as e:
+        finally:
+            with _engine_lock:
+                if _active_engine is engine:
+                    _active_engine = None
 
-        print(
-            f"[ERROR] Text-to-speech failed: {e}"
-        )
-
-        raise
-
-    finally:
-
-        if engine is not None:
-
-            try:
-                engine.stop()
-
-            except Exception:
-                pass
+            if engine is not None:
+                try:
+                    engine.stop()
+                except Exception:
+                    pass
 
 
 def main():

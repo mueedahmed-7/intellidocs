@@ -1,13 +1,14 @@
 fastapi
 uvicorn[standard]
 python-dotenv
-pymongo
+firebase-admin
 pydantic
-passlib[bcrypt]
+bcrypt
 python-jose[cryptography]
+python-multipart
 
 numpy
-opencv-python
+opencv-python-headless
 
 langchain-core
 langchain-community

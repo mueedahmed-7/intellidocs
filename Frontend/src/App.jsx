@@ -13,6 +13,11 @@ import FaceRegister from "./pages/FaceRegister.jsx";
 import FaceLogin from "./pages/FaceLogin.jsx";
 import Chat from "./pages/Chat.jsx";
 
+function ProtectedRoute({ children }) {
+  const token = localStorage.getItem("access_token");
+
+  return token ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
 
@@ -65,7 +70,11 @@ function App() {
 
         <Route
           path="/chat"
-          element={<Chat />}
+          element={
+            <ProtectedRoute>
+              <Chat />
+            </ProtectedRoute>
+          }
         />
 
 

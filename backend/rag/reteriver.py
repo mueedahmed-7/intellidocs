@@ -39,6 +39,7 @@ class Retriever:
         self,
         query: str,
         top_k: int = 5,
+        user_id: str | None = None,
     ) -> List[Dict]:
         """
         Retrieve the most relevant document chunks.
@@ -59,6 +60,7 @@ class Retriever:
         results = self.vector_store.similarity_search(
             query_embedding=query_embedding,
             top_k=top_k,
+            user_id=user_id,
         )
 
         retrieved_chunks = []
@@ -97,6 +99,7 @@ class Retriever:
     def retrieve_document(
         self,
         filename: str | None = None,
+        user_id: str | None = None,
         max_chunks: int = 20,
     ):
         """
@@ -108,6 +111,7 @@ class Retriever:
 
         results = self.vector_store.get_documents(
             filename=filename,
+            user_id=user_id,
         )
 
         retrieved_chunks = []
@@ -130,3 +134,29 @@ class Retriever:
             )
 
         return retrieved_chunks
+
+    def retrieve_latest_document(
+        self,
+        user_id: str,
+        max_chunks: int = 12,
+    ) -> List[Dict]:
+        """Return chunks for the authenticated user's most recently uploaded file."""
+        results = self.vector_store.get_documents(user_id=user_id)
+        metadatas = results.get("metadatas", [])
+
+        if not metadatas:
+            return []
+
+        latest_metadata = max(
+            metadatas,
+            key=lambda metadata: metadata.get("uploaded_at", ""),
+        )
+        filename = latest_metadata.get("filename")
+        if not filename:
+            return []
+
+        return self.retrieve_document(
+            filename=filename,
+            user_id=user_id,
+            max_chunks=max_chunks,
+        )

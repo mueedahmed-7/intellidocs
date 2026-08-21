@@ -107,6 +107,7 @@ class VectorStore:
         self,
         query_embedding: np.ndarray,
         top_k: int = 5,
+        user_id: str | None = None,
     ):
         """
         Retrieve the most similar chunks.
@@ -121,10 +122,27 @@ class VectorStore:
         if not isinstance(top_k, int) or top_k < 1:
             raise ValueError("top_k must be a positive integer.")
 
+        where = None
+        if user_id is not None:
+            where = {"user_id": str(user_id)}
+
+        # Chroma raises an error when n_results exceeds the number of vectors
+        # matching a metadata filter. Return the empty result shape expected by
+        # Retriever when this user has not uploaded any documents yet.
+        matching_ids = self.collection.get(where=where, include=[])["ids"]
+        if not matching_ids:
+            return {
+                "documents": [[]],
+                "metadatas": [[]],
+                "distances": [[]],
+            }
+
         query_args = {
             "query_embeddings": [np.asarray(query_embedding).tolist()],
-            "n_results": top_k,
+            "n_results": min(top_k, len(matching_ids)),
         }
+        if where is not None:
+            query_args["where"] = where
         results = self.collection.query(**query_args)
 
         return results
@@ -139,10 +157,19 @@ class VectorStore:
     @staticmethod
     def _build_where(
         filename: str | None = None,
+        user_id: str | None = None,
     ) -> dict | None:
-        if filename is None:
+        filters = []
+        if filename is not None:
+            filters.append({"filename": str(filename)})
+        if user_id is not None:
+            filters.append({"user_id": str(user_id)})
+
+        if not filters:
             return None
-        return {"filename": str(filename)}
+        if len(filters) == 1:
+            return filters[0]
+        return {"$and": filters}
 
     def get_all_documents(self):
         """
@@ -198,12 +225,13 @@ class VectorStore:
     def get_documents(
         self,
         filename: str | None = None,
+        user_id: str | None = None,
     ):
         """
         Return stored chunks, optionally filtered by filename.
         """
 
-        where = self._build_where(filename=filename)
+        where = self._build_where(filename=filename, user_id=user_id)
         if where is None:
             return self.collection.get()
         return self.collection.get(where=where)

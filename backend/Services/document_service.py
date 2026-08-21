@@ -6,6 +6,7 @@ and vector storage.
 """
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from services import loader, splitter, embedding_manager, vector_store
@@ -37,6 +38,7 @@ class DocumentService:
         self,
         file_path: str,
         user_id: str,
+        filename: str | None = None,
     ):
         """
         Process a document through the complete
@@ -65,10 +67,13 @@ class DocumentService:
             f"Generated {len(chunks)} chunks."
         )
 
-        # 3. Add user ID to metadata
+        # 3. Add ownership and upload metadata to every chunk. This lets the
+        # chat service retrieve the authenticated user's latest document.
+        uploaded_at = datetime.now(timezone.utc).isoformat()
         for chunk in chunks:
             chunk.metadata["user_id"] = str(user_id)
-            chunk.metadata["filename"] = Path(file_path).name
+            chunk.metadata["filename"] = filename or Path(file_path).name
+            chunk.metadata["uploaded_at"] = uploaded_at
 
         # 4. Generate embeddings
         embeddings = (
