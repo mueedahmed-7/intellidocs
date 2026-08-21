@@ -186,7 +186,7 @@ from services import chat_engine
 from Services.document_service import DocumentService
 from utils.jwt_handler import create_access_token
 from utils.auth_dependency import get_current_user_id
-from database.firebase_db import messages_collection
+from database.firebase_db import chats_collection, messages_collection
 from datetime import datetime, timezone
 
 
@@ -239,29 +239,59 @@ def chat(
 
     try:
 
+        now = datetime.now(timezone.utc).isoformat()
+        chat_id = request.chat_id
+
+        if chat_id:
+            chat_snapshot = chats_collection.document(chat_id).get()
+            if (
+                not chat_snapshot.exists
+                or chat_snapshot.to_dict().get("user_id") != current_user_id
+            ):
+                raise HTTPException(status_code=404, detail="Conversation not found.")
+        else:
+            # The first question becomes the readable title shown in the
+            # conversation sidebar.
+            chat_title = " ".join(request.question.split())[:60]
+            chat_reference = chats_collection.document()
+            chat_id = chat_reference.id
+            chat_reference.set(
+                {
+                    "user_id": current_user_id,
+                    "title": chat_title or "New conversation",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
         result = chat_engine.chat(
             question=request.question,
             top_k=request.top_k,
             user_id=current_user_id,
         )
 
-        # Persist chat history to Firestore (non-fatal if it fails)
+        # Store every turn under its conversation so the user can reopen it.
         try:
             messages_collection.add(
                 {
                     "user_id": current_user_id,
+                    "chat_id": chat_id,
                     "question": request.question,
                     "answer": result["answer"],
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": now,
                 }
             )
+            chats_collection.document(chat_id).update({"updated_at": now})
         except Exception as log_error:
             print(f"[CHAT HISTORY WARNING] Could not save message: {log_error}")
 
         return ChatResponse(
-            answer=result["answer"]
+            answer=result["answer"],
+            chat_id=chat_id,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
 
         raise HTTPException(
@@ -360,22 +390,82 @@ def login(
         )
 
 
-@router.get("/chat/history")
-def get_chat_history(
+@router.get("/chats")
+def get_chats(
     current_user_id: str = Depends(get_current_user_id),
 ):
     try:
-        docs = (
-            messages_collection
-            .where("user_id", "==", current_user_id)
-            .order_by("created_at")
-            .stream()
+        docs = chats_collection.where("user_id", "==", current_user_id).stream()
+        chats = [
+            {"id": doc.id, **doc.to_dict()}
+            for doc in docs
+        ]
+        # Messages created before conversations were introduced remain
+        # available as one read-only legacy conversation.
+        legacy_messages = [
+            doc.to_dict()
+            for doc in messages_collection.where("user_id", "==", current_user_id).stream()
+            if not doc.to_dict().get("chat_id")
+        ]
+        if legacy_messages:
+            chats.append(
+                {
+                    "id": "legacy-history",
+                    "title": "Earlier chat history",
+                    "updated_at": max(
+                        message.get("created_at", "") for message in legacy_messages
+                    ),
+                }
+            )
+        chats.sort(key=lambda chat: chat.get("updated_at", ""), reverse=True)
+
+        return {"chats": chats}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
         )
 
-        history = [doc.to_dict() for doc in docs]
 
-        return {"user_id": current_user_id, "history": history}
+@router.get("/chats/{chat_id}/messages")
+def get_chat_messages(
+    chat_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    try:
+        if chat_id == "legacy-history":
+            docs = messages_collection.where("user_id", "==", current_user_id).stream()
+            messages = [
+                {"id": doc.id, **doc.to_dict()}
+                for doc in docs
+                if not doc.to_dict().get("chat_id")
+            ]
+            messages.sort(key=lambda message: message.get("created_at", ""))
+            return {
+                "chat": {"id": "legacy-history", "title": "Earlier chat history"},
+                "messages": messages,
+            }
 
+        chat_snapshot = chats_collection.document(chat_id).get()
+        if (
+            not chat_snapshot.exists
+            or chat_snapshot.to_dict().get("user_id") != current_user_id
+        ):
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+
+        # Ownership was checked against the parent chat above, so querying by
+        # chat_id alone avoids requiring a Firestore composite index.
+        docs = messages_collection.where("chat_id", "==", chat_id).stream()
+        messages = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+        messages.sort(key=lambda message: message.get("created_at", ""))
+
+        return {"chat": {"id": chat_snapshot.id, **chat_snapshot.to_dict()}, "messages": messages}
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,

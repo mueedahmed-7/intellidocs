@@ -686,6 +686,30 @@ function nextMessageId() {
   return `msg-${Date.now()}-${messageIdCounter}`;
 }
 
+function welcomeMessage() {
+  return {
+    id: nextMessageId(),
+    role: "bot",
+    text: "Hi! Ask me anything, or upload a document and I'll answer from it.",
+  };
+}
+
+// The model commonly uses Markdown for emphasis. Render the safe inline
+// formatting we support instead of displaying its Markdown characters.
+function renderBotText(text) {
+  return text.split(/(\*\*[^*]+?\*\*|`[^`]+?`)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+
+    return part;
+  });
+}
+
 function Chat() {
   const navigate = useNavigate();
 
@@ -694,13 +718,12 @@ function Chat() {
   // ============================================================
 
   // Real conversation, starts empty (was previously hardcoded JSX)
-  const [messages, setMessages] = useState([
-    {
-      id: nextMessageId(),
-      role: "bot",
-      text: "Hi! Ask me anything, or upload a document and I'll answer from it.",
-    },
-  ]);
+  const [messages, setMessages] = useState([welcomeMessage()]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const messagesEndRef = useRef(null);
 
   // Which message is currently being spoken (null when nothing is playing)
   const [speakingId, setSpeakingId] = useState(null);
@@ -737,14 +760,115 @@ function Chat() {
   };
 
   // ============================================================
+  // LOAD THE CONVERSATION SIDEBAR
+  // ============================================================
+
+  useEffect(() => {
+    let isActive = true;
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return () => {
+        isActive = false;
+      };
+    }
+
+    const loadConversations = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/chats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.status === 401) {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("user_id");
+          localStorage.removeItem("user_name");
+          localStorage.removeItem("user_email");
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error("Could not load your saved conversations.");
+        }
+
+        const result = await response.json();
+        if (isActive) {
+          setConversations(result.chats || []);
+        }
+      } catch (error) {
+        console.error("Conversation history error:", error);
+        if (isActive) {
+          setStatusMessage(error.message || "Could not load saved conversations.");
+        }
+      } finally {
+        if (isActive) {
+          setIsLoadingHistory(false);
+        }
+      }
+    };
+
+    loadConversations();
+
+    return () => {
+      isActive = false;
+    };
+  }, [navigate]);
+
+  const handleNewChat = () => {
+    if (isSending || isLoadingConversation) return;
+    setActiveChatId(null);
+    setMessages([welcomeMessage()]);
+    setInputText("");
+    setStatusMessage("");
+  };
+
+  const handleConversationSelect = async (chatId) => {
+    const token = localStorage.getItem("access_token");
+    if (!token || isSending || isLoadingConversation || chatId === activeChatId) return;
+
+    setIsLoadingConversation(true);
+    setStatusMessage("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/chats/${chatId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+      if (!response.ok) throw new Error("Could not open this conversation.");
+
+      const result = await response.json();
+      const restoredMessages = (result.messages || []).flatMap((entry) => [
+        { id: `${entry.id}-question`, role: "user", text: entry.question },
+        { id: `${entry.id}-answer`, role: "bot", text: entry.answer },
+      ]);
+      setActiveChatId(chatId);
+      setMessages(restoredMessages.length ? restoredMessages : [welcomeMessage()]);
+    } catch (error) {
+      console.error("Conversation load error:", error);
+      setStatusMessage(error.message || "Could not open this conversation.");
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  };
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isSending, isLoadingHistory, isLoadingConversation]);
+
+  // ============================================================
   // SEND MESSAGE -> POST /chat
   // ============================================================
 
   const handleSend = async () => {
     const question = inputText.trim();
     const token = localStorage.getItem("access_token");
+    const isLegacyConversation = activeChatId === "legacy-history";
 
-    if (!question || isSending) {
+    if (!question || isSending || isLoadingHistory || isLoadingConversation) {
       return;
     }
 
@@ -759,7 +883,7 @@ function Chat() {
       text: question,
     };
 
-    setMessages((previous) => [...previous, userMessage]);
+    setMessages((previous) => isLegacyConversation ? [userMessage] : [...previous, userMessage]);
     setInputText("");
     setStatusMessage("");
     setIsSending(true);
@@ -774,6 +898,7 @@ function Chat() {
         body: JSON.stringify({
           question,
           top_k: 5,
+          chat_id: isLegacyConversation ? null : activeChatId,
         }),
       });
 
@@ -791,6 +916,17 @@ function Chat() {
       }
 
       const result = await response.json();
+
+      setActiveChatId(result.chat_id);
+      setConversations((previous) => {
+        const current = previous.find((chat) => chat.id === result.chat_id);
+        const updatedChat = {
+          id: result.chat_id,
+          title: current?.title || question.replace(/\s+/g, " ").slice(0, 60),
+          updated_at: new Date().toISOString(),
+        };
+        return [updatedChat, ...previous.filter((chat) => chat.id !== result.chat_id)];
+      });
 
       setMessages((previous) => [
         ...previous,
@@ -830,7 +966,7 @@ function Chat() {
   // ============================================================
 
   const handleUploadClick = () => {
-    if (isUploading) {
+    if (isUploading || isLoadingHistory || isLoadingConversation) {
       return;
     }
     fileInputRef.current?.click();
@@ -1005,6 +1141,7 @@ function Chat() {
   // ============================================================
 
   const handleMic = () => {
+    if (isLoadingHistory || isLoadingConversation) return;
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -1130,8 +1267,46 @@ function Chat() {
       </header>
 
       {/* CHAT */}
-      <main className="chat-container">
+      <main className="chat-workspace">
+        <aside className="history-sidebar" aria-label="Chat history">
+          <button
+            className="new-chat-button"
+            type="button"
+            onClick={handleNewChat}
+            disabled={isSending || isLoadingConversation}
+          >
+            + New chat
+          </button>
+          <p className="history-heading">Previous chats</p>
+          <div className="conversation-list">
+            {isLoadingHistory && <p className="conversation-empty">Loading chats...</p>}
+            {!isLoadingHistory && !conversations.length && (
+              <p className="conversation-empty">Your conversations will appear here.</p>
+            )}
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                className={
+                  conversation.id === activeChatId
+                    ? "conversation-item active"
+                    : "conversation-item"
+                }
+                type="button"
+                onClick={() => handleConversationSelect(conversation.id)}
+                disabled={isSending || isLoadingConversation}
+                title={conversation.title}
+              >
+                {conversation.title}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="chat-container">
         <div className="messages">
+          {isLoadingConversation && (
+            <div className="history-loading">Opening conversation...</div>
+          )}
           {messages.map((message) => (
             <div
               key={message.id}
@@ -1145,7 +1320,9 @@ function Chat() {
                 {message.role === "user" ? "You" : "RAG Chatbot"}
               </div>
 
-              <div className="message-text">{message.text}</div>
+              <div className="message-text">
+                {message.role === "bot" ? renderBotText(message.text) : message.text}
+              </div>
 
               {message.role === "bot" && (
                 <button
@@ -1166,6 +1343,7 @@ function Chat() {
               <div className="message-text">Thinking...</div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* STATUS */}
@@ -1206,18 +1384,20 @@ function Chat() {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Ask something..."
+            placeholder={isLoadingHistory ? "Loading your conversation..." : "Ask something..."}
+            disabled={isLoadingHistory || isLoadingConversation}
           />
 
           <button
             className="send-button"
             type="button"
             onClick={handleSend}
-            disabled={isSending || !inputText.trim()}
+            disabled={isSending || isLoadingHistory || isLoadingConversation || !inputText.trim()}
           >
             ➤
           </button>
         </div>
+        </section>
       </main>
     </div>
   );

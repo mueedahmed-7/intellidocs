@@ -70,8 +70,14 @@ class ChatRequest(BaseModel):
         description="Number of chunks to retrieve",
     )
 
+    chat_id: str | None = Field(
+        default=None,
+        description="Existing conversation ID. Omit to start a new conversation.",
+    )
+
 class ChatResponse(BaseModel):
     answer: str
+    chat_id: str
 
 
 class UploadResponse(BaseModel):
