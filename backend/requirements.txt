@@ -1,20 +1,26 @@
+# FastAPI server and authentication
 fastapi
 uvicorn[standard]
 python-dotenv
-firebase-admin
 pydantic
-bcrypt
 python-jose[cryptography]
 python-multipart
+bcrypt
 
-numpy
-opencv-python-headless
+# Firebase database
+firebase-admin
 
+# RAG, document loading, embeddings, and vector storage
 langchain-core
 langchain-community
 langchain-text-splitters
 langchain-groq
 sentence-transformers
 chromadb
+PyMuPDF
+docx2txt
 
-pypdf
+# Face recognition and server-side text-to-speech
+numpy
+opencv-python-headless
+pyttsx3
