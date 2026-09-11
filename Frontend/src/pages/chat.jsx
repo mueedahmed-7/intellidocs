@@ -691,6 +691,7 @@ function welcomeMessage() {
   return {
     id: nextMessageId(),
     role: "bot",
+    isWelcome: true,
     text: "Hi! Ask me anything, or upload a document and I'll answer from it.",
   };
 }
@@ -725,6 +726,7 @@ function Chat() {
   const [activeChatId, setActiveChatId] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [documentFilter, setDocumentFilter] = useState("all");
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const messagesEndRef = useRef(null);
 
@@ -1341,23 +1343,19 @@ function Chat() {
   // UI
   // ============================================================
 
+  const activeConversation = conversations.find((conversation) => conversation.chat_id === activeChatId);
+  const firstName = (user?.name || "there").trim().split(/\s+/)[0];
+  const showWelcome = messages.length === 1 && messages[0]?.isWelcome && !isLoadingConversation;
+  const visibleDocuments = documents.filter((document) => documentFilter === "all" || document.status === documentFilter);
+
   return (
     <div className="chat-page">
-      {/* HEADER */}
-      <header className="chat-header">
-        <div className="logo">
-          Doc<span>Chat</span>
-        </div>
-
-        <div className="user-area">
-          <span>Welcome, {user?.name || "User"}</span>
-          <button onClick={handleLogout}>Logout</button>
-        </div>
-      </header>
-
-      {/* CHAT */}
       <main className="chat-workspace">
         <aside className="history-sidebar" aria-label="Chat history">
+          <div className="sidebar-brand">
+            <div className="logo">Intelli<span>Docs</span></div>
+            <p>Ask. Understand. Do More.</p>
+          </div>
           <button
             className="new-chat-button"
             type="button"
@@ -1366,7 +1364,10 @@ function Chat() {
           >
             New Chat
           </button>
-          <p className="history-heading">Conversations</p>
+          <div className="sidebar-nav" aria-label="Workspace sections">
+            <span className="active">Chats</span><span>Documents</span><span>Profile</span>
+          </div>
+          <p className="history-heading">Recent Chats</p>
           <div className="conversation-list">
             {isLoadingHistory && <p className="conversation-empty">Loading chats...</p>}
             {!isLoadingHistory && !conversations.length && (
@@ -1385,65 +1386,44 @@ function Chat() {
                 </button>
                 {conversation.chat_id !== "legacy-history" && (
                   <span className="conversation-actions">
-                    <button type="button" onClick={() => handleRenameConversation(conversation)} disabled={isSending} aria-label={`Rename ${conversation.title}`}>Rename</button>
-                    <button type="button" onClick={() => handleDeleteConversation(conversation)} disabled={isSending} aria-label={`Delete ${conversation.title}`}>Delete</button>
+                    <button type="button" onClick={() => handleRenameConversation(conversation)} disabled={isSending} aria-label={`Rename ${conversation.title}`} title="Rename conversation">✎</button>
+                    <button type="button" onClick={() => handleDeleteConversation(conversation)} disabled={isSending} aria-label={`Delete ${conversation.title}`} title="Delete conversation">⌫</button>
                   </span>
                 )}
               </div>
             ))}
           </div>
-          <div className="conversation-list" aria-label="Document library">
-            <p className="history-heading">Your Documents</p>
-            <button
-              className="new-chat-button"
-              type="button"
-              onClick={() => void loadDocuments()}
-              disabled={isLoadingDocuments || isUploading}
-            >
-              Refresh Documents
-            </button>
-            {isLoadingDocuments && <p className="conversation-empty">Loading documents...</p>}
-            {!isLoadingDocuments && !documents.length && (
-              <p className="conversation-empty">Uploaded documents will appear here.</p>
-            )}
-            {documents.map((document) => (
-              <div
-                className={`conversation-item document-row ${selectedDocumentIds.includes(document.document_id) ? "selected" : ""} ${document.status === "ready" ? "" : "disabled"}`}
-                key={document.document_id}
-                role={document.status === "ready" ? "button" : undefined}
-                tabIndex={document.status === "ready" ? 0 : undefined}
-                aria-pressed={document.status === "ready" ? selectedDocumentIds.includes(document.document_id) : undefined}
-                onClick={document.status === "ready" ? () => toggleDocumentSelection(document.document_id) : undefined}
-                onKeyDown={document.status === "ready" ? (event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    toggleDocumentSelection(document.document_id);
-                  }
-                } : undefined}
-              >
-                <span title={document.original_filename}>📄 {document.original_filename} {selectedDocumentIds.includes(document.document_id) && "✓"}</span>
-                <small>{document.status} · {document.chunk_count} chunks</small>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleDeleteDocument(document.document_id, document.original_filename);
-                  }}
-                  disabled={document.status === "processing" || isUploading}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
+          <div className="sidebar-profile">
+            <span>{user?.name || user?.email || "User"}</span>
+            {user?.email && <small>{user.email}</small>}
+            <button type="button" onClick={handleLogout}>Logout</button>
           </div>
         </aside>
 
         <section className="chat-container">
-        <div className="messages">
+          <header className="chat-header">
+            <div>
+              <div className="chat-title-row"><h1>{activeConversation?.title || "New conversation"}</h1>{activeConversation && <button type="button" className="rename-chat-button" onClick={() => handleRenameConversation(activeConversation)} aria-label="Rename current conversation" title="Rename conversation">✎</button>}</div>
+              {(activeConversation?.message_count > 0 || selectedDocumentIds.length > 0) && <p>{activeConversation?.message_count || 0} messages {selectedDocumentIds.length > 0 && `· ${selectedDocumentIds.length} document${selectedDocumentIds.length === 1 ? "" : "s"}`}</p>}
+            </div>
+            {selectedDocumentIds.length > 0 && <div className="context-badge">▣ {selectedDocumentIds.length} document{selectedDocumentIds.length === 1 ? "" : "s"} in context</div>}
+          </header>
+          <div className="messages">
+          {showWelcome && (
+            <section className="welcome-area">
+              <h2>Hello, {firstName}! <span aria-hidden="true">👋</span></h2>
+              <p>Ask anything, or use your documents to get smarter answers.</p>
+              <div className="welcome-suggestions">
+                {["Explain a concept", "Summarize a document", "Analyze a PDF", "Help me write"].map((suggestion) => (
+                  <button type="button" key={suggestion} onClick={() => setInputText(suggestion)}>{suggestion}</button>
+                ))}
+              </div>
+            </section>
+          )}
           {isLoadingConversation && (
             <div className="history-loading">Opening conversation...</div>
           )}
-          {messages.map((message) => (
+          {messages.filter((message) => !showWelcome || message.role !== "bot").map((message) => (
             <div
               key={message.id}
               className={
@@ -1452,9 +1432,7 @@ function Chat() {
                   : "message bot-message"
               }
             >
-              <div className="message-label">
-                {message.role === "user" ? "You" : "RAG Chatbot"}
-              </div>
+              <div className="message-label">{message.role === "user" ? "You" : <><span className="assistant-icon" aria-hidden="true">✦</span> IntelliDocs</>}</div>
 
               <div className="message-text">
                 {message.role === "bot" ? <AssistantMarkdown content={message.text} /> : message.text}
@@ -1464,9 +1442,9 @@ function Chat() {
                 <>
                 {message.sources?.length > 0 && (
                   <div className="message-sources">
-                    Sources: {message.sources.map((source) => (
+                    <span>Sources</span>{message.sources.map((source) => (
                       <div key={`${source.document_id}-${source.chunk_index}`}>
-                        {source.filename} — {source.page ? `page ${source.page}` : `chunk ${source.chunk_index}`}
+                        <span aria-hidden="true">📄</span><span>{source.filename}</span><small>{source.page ? `Page ${source.page}` : `Chunk ${source.chunk_index}`}</small>
                       </div>
                     ))}
                   </div>
@@ -1486,34 +1464,27 @@ function Chat() {
 
           {isSending && (
             <div className="message bot-message">
-              <div className="message-label">RAG Chatbot</div>
+              <div className="message-label"><span className="assistant-icon" aria-hidden="true">✦</span> IntelliDocs</div>
               <div className="message-text">Thinking...</div>
             </div>
           )}
           <div ref={messagesEndRef} />
-        </div>
+          </div>
 
         {/* STATUS */}
         {statusMessage && <p className="status-message">{statusMessage}</p>}
 
-        {selectedDocumentIds.length > 0 && (
-          <div className="selected-document-chips" aria-label="Documents selected for chat">
-            <span>Using documents:</span>
-            {documents.filter((document) => selectedDocumentIds.includes(document.document_id)).map((document) => (
-              <button
-                type="button"
-                key={document.document_id}
-                onClick={() => toggleDocumentSelection(document.document_id)}
-                aria-label={`Remove ${document.original_filename} from chat`}
-              >
-                📄 {document.original_filename} ×
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* CHAT INPUT */}
         <div className="chat-input-area">
+          {selectedDocumentIds.length > 0 && (
+            <div className="selected-document-chips" aria-label="Documents selected for chat">
+              {documents.filter((document) => selectedDocumentIds.includes(document.document_id)).map((document) => (
+                <button type="button" key={document.document_id} onClick={() => toggleDocumentSelection(document.document_id)} aria-label={`Remove ${document.original_filename} from chat`}>
+                  📄 {document.original_filename} ×
+                </button>
+              ))}
+            </div>
+          )}
           {/* Hidden file input, triggered by the paperclip button */}
           <input
             type="file"
@@ -1547,7 +1518,7 @@ function Chat() {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder={isLoadingHistory ? "Loading your conversation..." : "Ask a question about your documents..."}
+            placeholder={isLoadingHistory ? "Loading your conversation..." : "Ask anything..."}
             disabled={isLoadingHistory || isLoadingConversation}
           />
 
@@ -1561,6 +1532,41 @@ function Chat() {
           </button>
         </div>
         </section>
+        <aside className="document-panel" aria-label="Documents">
+          <p className="document-panel-quote">“Better questions.<br />Brighter answers.”</p>
+          <div className="document-panel-header">
+            <div><h2>Documents</h2><p>Available for your chat</p></div>
+            <button className="document-upload-button" type="button" onClick={handleUploadClick} disabled={isUploading}>{isUploading ? "Uploading…" : "Upload"}</button>
+          </div>
+          <button className="document-dropzone" type="button" onClick={handleUploadClick} disabled={isUploading}><span aria-hidden="true">☁</span><strong>Upload Document</strong><small>PDF, DOC, TXT (Max 20MB)</small></button>
+          <div className="document-filters" role="group" aria-label="Document status filters">
+            {[["all", "All"], ["ready", "Ready"], ["processing", "Processing"], ["failed", "Failed"]].map(([value, label]) => (
+              <button type="button" key={value} className={documentFilter === value ? "active" : ""} onClick={() => setDocumentFilter(value)}>{label}{value === "all" ? ` (${documents.length})` : ""}</button>
+            ))}
+          </div>
+          <button className="document-refresh-button" type="button" onClick={() => void loadDocuments()} disabled={isLoadingDocuments || isUploading} aria-label="Refresh documents" title="Refresh documents">↻</button>
+          <div className="document-list">
+            {isLoadingDocuments && <p className="conversation-empty">Loading documents...</p>}
+            {!isLoadingDocuments && !documents.length && <p className="conversation-empty">Your uploaded documents will appear here.</p>}
+            {visibleDocuments.map((document) => (
+              <div
+                className={`document-row ${selectedDocumentIds.includes(document.document_id) ? "selected" : ""} ${document.status === "ready" ? "" : "disabled"}`}
+                key={document.document_id}
+                role={document.status === "ready" ? "button" : undefined}
+                tabIndex={document.status === "ready" ? 0 : undefined}
+                aria-pressed={document.status === "ready" ? selectedDocumentIds.includes(document.document_id) : undefined}
+                onClick={document.status === "ready" ? () => toggleDocumentSelection(document.document_id) : undefined}
+                onKeyDown={document.status === "ready" ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleDocumentSelection(document.document_id); }
+                } : undefined}
+              >
+                <div className="document-row-main"><span className="document-icon" aria-hidden="true">📄</span><span title={document.original_filename}>{document.original_filename}</span>{selectedDocumentIds.includes(document.document_id) && <b aria-label="Selected">✓</b>}</div>
+                <div className="document-row-meta"><small className={`document-status ${document.status}`}>{document.status}</small><small>{document.chunk_count} chunks</small></div>
+                <button type="button" onClick={(event) => { event.stopPropagation(); handleDeleteDocument(document.document_id, document.original_filename); }} disabled={document.status === "processing" || isUploading} aria-label={`Delete ${document.original_filename}`} title="Delete document">⌫</button>
+              </div>
+            ))}
+          </div>
+        </aside>
       </main>
     </div>
   );

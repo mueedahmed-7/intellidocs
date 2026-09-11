@@ -732,7 +732,7 @@ function FaceLogin() {
     <div className="auth-page">
       <div className="auth-card face-card">
         <div className="logo">
-          Doc<span>Chat</span>
+          Intelli<span>Docs</span>
         </div>
 
         <h1>Face Login</h1>

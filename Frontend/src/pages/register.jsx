@@ -418,18 +418,28 @@ function Register() {
 
   return (
 
-    <div className="auth-page">
+    <div className="auth-page auth-split-page">
+      <section className="auth-marketing" aria-label="IntelliDocs benefits">
+        <div className="logo">Intelli<span>Docs</span></div>
+        <p className="auth-tagline">Ask. Understand. Do More.</p>
+        <div className="auth-marketing-copy">
+          <h1>Join IntelliDocs</h1>
+          <p>Create your account and start exploring the power of your documents.</p>
+          <ul><li>▣ <span>Chat with your documents</span></li><li>✦ <span>Get clear, sourced answers</span></li><li>◉ <span>Secure and private</span></li><li>▴ <span>Built for students and professionals</span></li></ul>
+        </div>
+        <div className="auth-illustration" aria-hidden="true"><span>✦</span><em>Knowledge<br />in your hands</em></div>
+      </section>
 
-      <div className="auth-card">
+      <div className="auth-card auth-form-card">
 
         <div className="logo">
-          Doc<span>Chat</span>
+          Intelli<span>Docs</span>
         </div>
 
         <h1>Create Account</h1>
 
         <p className="subtitle">
-          Create your account to start chatting with your documents.
+          Fill in your details to get started
         </p>
 
 
@@ -437,11 +447,9 @@ function Register() {
 
           <div className="input-group">
 
-            <label>Full Name</label>
-
             <input
               type="text"
-              placeholder="Enter your name"
+              placeholder="Full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -452,11 +460,9 @@ function Register() {
 
           <div className="input-group">
 
-            <label>Email</label>
-
             <input
               type="email"
-              placeholder="Enter your email"
+              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -467,11 +473,9 @@ function Register() {
 
           <div className="input-group">
 
-            <label>Password</label>
-
             <input
               type="password"
-              placeholder="Create a password (min 8 characters)"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={8}
@@ -484,11 +488,9 @@ function Register() {
 
           <div className="input-group">
 
-            <label>Confirm Password</label>
-
             <input
               type="password"
-              placeholder="Confirm your password"
+              placeholder="Confirm password"
               value={confirmPassword}
               onChange={(e) =>
                 setConfirmPassword(e.target.value)

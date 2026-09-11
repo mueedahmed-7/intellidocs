@@ -188,29 +188,37 @@ function Login() {
 
   return (
 
-    <div className="auth-page">
+    <div className="auth-page auth-split-page">
+      <section className="auth-marketing" aria-label="IntelliDocs benefits">
+        <div className="logo">Intelli<span>Docs</span></div>
+        <p className="auth-tagline">Ask. Understand. Do More.</p>
+        <div className="auth-marketing-copy">
+          <h1>Your documents,<br />smarter answers.</h1>
+          <p>Upload, ask, and get accurate answers powered by AI.</p>
+          <ul><li>▣ <span>Chat with your documents</span></li><li>✦ <span>Get clear, sourced answers</span></li><li>◉ <span>Secure and private</span></li><li>▴ <span>Built for students and professionals</span></li></ul>
+        </div>
+        <div className="auth-illustration" aria-hidden="true"><span>✦</span><em>Knowledge<br />in your hands</em></div>
+      </section>
 
-      <div className="auth-card">
+      <div className="auth-card auth-form-card">
 
         <div className="logo">
-          Doc<span>Chat</span>
+          Intelli<span>Docs</span>
         </div>
 
-        <h1>Welcome Back</h1>
+        <h1>Welcome back</h1>
 
         <p className="subtitle">
-          Sign in to your AI document assistant
+          Sign in to your IntelliDocs account
         </p>
 
         <form onSubmit={handleLogin}>
 
           <div className="input-group">
 
-            <label>Email</label>
-
             <input
               type="email"
-              placeholder="Enter your email"
+              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -220,11 +228,9 @@ function Login() {
 
           <div className="input-group">
 
-            <label>Password</label>
-
             <input
               type="password"
-              placeholder="Enter your password"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -243,7 +249,7 @@ function Login() {
             className="auth-button"
             disabled={loading}
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
 
         </form>

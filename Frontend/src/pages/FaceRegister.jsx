@@ -757,7 +757,7 @@ function FaceRegister() {
     <div className="auth-page">
       <div className="auth-card face-card">
         <div className="logo">
-          Doc<span>Chat</span>
+          Intelli<span>Docs</span>
         </div>
 
         <h1>Register Your Face</h1>
