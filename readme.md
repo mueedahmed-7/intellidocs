@@ -5,15 +5,15 @@ A FastAPI and React application for authenticated, document-grounded chat. Users
 ## Architecture
 
 - `Frontend/`: Vite/React application for sessions, face capture, documents, conversations, and voice controls.
-- `backend/`: FastAPI routes, services, JWT utilities, Firestore access, and RAG orchestration.
+- `backend/`: FastAPI routes, services, JWT utilities, PostgreSQL access, and RAG orchestration.
 - `backend/Services/`: authentication, document lifecycle, conversation lifecycle, and web face records.
 - `backend/rag/`: loading, splitting, embeddings, Chroma retrieval, prompts, and Groq chat engine.
-- `member3/face/`: YuNet/SFace utilities. Three-angle scripts and `.npy` data are standalone/demo tooling; the web app uses Firestore embeddings.
+- `member3/face/`: YuNet/SFace utilities. Three-angle scripts and `.npy` data are standalone/demo tooling; the web app stores embeddings in PostgreSQL.
 - `member3/voice/`: existing local voice utilities used by web voice endpoints.
 
 ## Prerequisites
 
-- Windows PowerShell, Python, Node.js/npm, and a Firebase project.
+- Windows PowerShell, Python, Node.js/npm, and PostgreSQL 15+ (or a hosted PostgreSQL database).
 - YuNet and SFace ONNX models in `member3/face/models/`. Missing models may download on first face use.
 
 ## Configuration
@@ -28,10 +28,19 @@ GROQ_API_KEY=your-groq-key
 MAX_UPLOAD_SIZE_MB=10
 RAG_DISTANCE_THRESHOLD=1.6
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-# Use exactly one Firebase option:
-FIREBASE_CREDENTIALS_JSON={...service-account-json...}
-# GOOGLE_APPLICATION_CREDENTIALS=relative-or-absolute-path-to-service-account.json
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 ```
+
+For local PostgreSQL on Windows, create the database once (enter your own
+PostgreSQL password when prompted):
+
+```powershell
+psql -U postgres -d postgres -c "CREATE DATABASE intellidocs;"
+```
+
+Then set `DATABASE_URL` in `.env` to
+`postgresql+psycopg://postgres:<PASSWORD>@localhost:5432/intellidocs`.
+The application creates its tables automatically on startup.
 
 The frontend optionally reads `VITE_API_URL`; it defaults to `http://127.0.0.1:8000` locally.
 
@@ -84,13 +93,13 @@ npm.cmd run build
 
 The repository-root `render.yaml` deploys the FastAPI backend on Render. It installs Tesseract for OCR and `espeak-ng` for server-side text-to-speech, and mounts `/var/data` so uploads and Chroma vectors persist across restarts.
 
-Before deploying, set these Render secrets: `GROQ_API_KEY`, `FIREBASE_CREDENTIALS_JSON`, `JWT_SECRET_KEY`, and `ALLOWED_ORIGINS`. Set `ALLOWED_ORIGINS` to the exact HTTPS URL of the deployed frontend.
+Create a Render PostgreSQL service, then set the backend's `DATABASE_URL` from its internal database URL (or provide another managed PostgreSQL connection URL). Also set `GROQ_API_KEY`, `JWT_SECRET_KEY`, and `ALLOWED_ORIGINS`. Set `ALLOWED_ORIGINS` to the exact HTTPS URL of the deployed frontend. The backend creates its application tables at startup; it never needs Firebase credentials.
 
 Deploy `Frontend/` as a Vite static site (the included `vercel.json` supports Vercel SPA routing). Set `VITE_API_URL` to the public HTTPS URL of the backend **before** building the frontend. The provided `.env.example` files list the required names without containing secrets.
 
 ## Important limitations
 
 - RAG answers are document-grounded only; no usable context produces a controlled response.
-- Face login uses one web capture and Firestore embeddings. It has no liveness or anti-spoofing protection and is not high-security biometric authentication.
+- Face login uses one web capture and PostgreSQL embeddings. It has no liveness or anti-spoofing protection and is not high-security biometric authentication.
 - `backend/chroma_db`, existing uploads, legacy Chroma vectors, and `member3/face/data` are preserved legacy/local data and are not automatically migrated or deleted.
 - The historical filename `backend/rag/reteriver.py` remains for import stability.

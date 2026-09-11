@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,10 +11,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-for-production")
+os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite://")
+
 with (
-    patch("firebase_admin.credentials.Certificate"),
-    patch("firebase_admin.initialize_app"),
-    patch("firebase_admin.firestore.client"),
     patch("backend.rag.vectorstore.VectorStore"),
 ):
     from backend.api import routes

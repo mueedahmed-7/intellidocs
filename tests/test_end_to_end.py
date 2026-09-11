@@ -1,4 +1,4 @@
-"""Small isolated workflow tests; no real Firebase, Chroma, files, or models."""
+"""Small isolated workflow tests; no external database, Chroma, files, or models."""
 
 import unittest
 from unittest.mock import patch
@@ -72,4 +72,3 @@ class EndToEndWorkflowTests(unittest.TestCase):
         self.service.delete_chat(first, "user-a")
         self.assertIn(second, self.chats.data)
         self.assertEqual(len([item for item in self.messages.data.values() if item["chat_id"] == second]), 2)
-

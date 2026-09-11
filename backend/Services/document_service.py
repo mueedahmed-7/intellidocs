@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.config import MAX_UPLOAD_SIZE_BYTES, UPLOAD_DIR
-from backend.database.firebase_db import documents_collection
+from backend.database.postgres_db import documents_collection
 from backend.services import embedding_manager, loader, splitter, vector_store
 
 
@@ -19,7 +19,7 @@ class DocumentTooLargeError(DocumentValidationError):
 
 
 class DocumentStorageError(RuntimeError):
-    """Raised when Firestore, vectors, or file cleanup cannot complete."""
+    """Raised when persistent storage, vectors, or file cleanup cannot complete."""
 
 
 class DocumentService:

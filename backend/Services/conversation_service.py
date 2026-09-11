@@ -1,4 +1,4 @@
-"""Firestore-backed conversation lifecycle helpers.
+"""PostgreSQL-backed conversation lifecycle helpers.
 
 New messages are role-based.  The reader deliberately also understands the
 legacy combined question/answer records so existing history stays visible.
@@ -6,7 +6,11 @@ legacy combined question/answer records so existing history stays visible.
 
 from datetime import datetime, timezone
 
-from backend.database.firebase_db import chats_collection, db, messages_collection
+from backend.database.postgres_db import chats_collection, messages_collection
+
+# Retained as a harmless compatibility seam for existing isolated tests.  The
+# SQLAlchemy implementation performs deletion through repository references.
+db = None
 
 
 class ConversationStorageError(Exception):
@@ -161,12 +165,10 @@ class ConversationService:
             # Ownership is established through the parent before this query.
             # Each message also carries user_id, so cleanup cannot cross users.
             records = [item for item in messages_collection.where("chat_id", "==", chat_id).stream() if (item.to_dict() or {}).get("user_id") == user_id]
-            batch = db.batch()
             for record in records:
                 reference = getattr(record, "reference", messages_collection.document(record.id))
-                batch.delete(reference)
-            batch.delete(chats_collection.document(snapshot.id))
-            batch.commit()
+                reference.delete()
+            chats_collection.document(snapshot.id).delete()
             return {"chat_id": chat_id, "deleted_messages": len(records)}
         except Exception as error:
             raise ConversationStorageError("Conversation could not be deleted safely.") from error

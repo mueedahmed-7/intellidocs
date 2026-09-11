@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes import router
 from backend.config import allowed_origins
+from backend.database.postgres import init_database
 from backend.Services.face_service import FaceService, FaceStorageError, FaceValidationError
 from backend.utils.auth_dependency import get_current_user_id
 from backend.utils.jwt_handler import create_access_token
@@ -26,6 +27,12 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.on_event("startup")
+def initialize_database():
+    """Validate DATABASE_URL and create the application tables if needed."""
+    init_database()
 
 
 @app.get("/")

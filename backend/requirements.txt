@@ -7,8 +7,9 @@ python-jose[cryptography]
 python-multipart
 bcrypt
 
-# Firebase database
-firebase-admin
+# PostgreSQL persistence
+SQLAlchemy>=2.0,<3.0
+psycopg[binary]>=3.1,<4.0
 
 # RAG, document loading, embeddings, and vector storage
 langchain-core

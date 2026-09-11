@@ -1,4 +1,4 @@
-"""Authentication tests backed by an in-memory Firestore replacement."""
+"""Authentication tests backed by an in-memory storage replacement."""
 
 import os
 import unittest
@@ -8,16 +8,13 @@ from unittest.mock import MagicMock, patch
 os.environ["JWT_SECRET_KEY"] = "test-secret-not-for-production"
 os.environ["JWT_ALGORITHM"] = "HS256"
 os.environ["JWT_ACCESS_TOKEN_EXPIRE_MINUTES"] = "60"
-os.environ["FIREBASE_CREDENTIALS_JSON"] = "{}"
+os.environ["DATABASE_URL"] = "sqlite+pysqlite://"
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jose import ExpiredSignatureError, jwt
 
 with (
-    patch("firebase_admin.credentials.Certificate"),
-    patch("firebase_admin.initialize_app"),
-    patch("firebase_admin.firestore.client", return_value=MagicMock()),
     patch("backend.rag.vectorstore.VectorStore"),
 ):
     from backend.api import routes

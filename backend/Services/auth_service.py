@@ -102,7 +102,7 @@
 #         }
 import bcrypt
 
-from backend.database.firebase_db import users_collection
+from backend.database.postgres_db import users_collection
 
 
 MAX_BCRYPT_PASSWORD_BYTES = 72
@@ -117,7 +117,7 @@ class InvalidCredentialsError(ValueError):
 
 
 class AuthStorageError(RuntimeError):
-    """Raised when Firestore cannot complete an authentication operation."""
+    """Raised when persistent storage cannot complete an authentication operation."""
 
 
 class AuthService:

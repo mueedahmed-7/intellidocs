@@ -1,11 +1,15 @@
-"""Smoke tests that do not contact Firestore, Groq, or local Chroma data."""
+"""Smoke tests that do not contact PostgreSQL, Groq, or local Chroma data."""
 
 import importlib
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-for-production")
+os.environ["DATABASE_URL"] = "sqlite+pysqlite://"
 
 
 class StartupSmokeTests(unittest.TestCase):
@@ -21,9 +25,6 @@ class StartupSmokeTests(unittest.TestCase):
                 sys.modules.pop(module_name)
 
         with (
-            patch("firebase_admin.credentials.Certificate"),
-            patch("firebase_admin.initialize_app"),
-            patch("firebase_admin.firestore.client", return_value=MagicMock()),
             patch("backend.rag.vectorstore.VectorStore"),
             patch("backend.rag.chatengine.ChatEngine"),
         ):

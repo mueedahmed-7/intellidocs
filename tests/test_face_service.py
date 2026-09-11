@@ -1,4 +1,4 @@
-"""Face web-path tests with fake Firestore and embeddings; no camera or model needed."""
+"""Face web-path tests with fake storage and embeddings; no camera or model needed."""
 
 import unittest
 from unittest.mock import patch
@@ -62,4 +62,3 @@ class FaceServiceTests(unittest.TestCase):
         self.faces.data["u1"] = {"user_id": "u1", "embedding": [0.0, 1.0]}
         result = FaceService.login_with_face(b"image")
         self.assertFalse(result["success"])
-

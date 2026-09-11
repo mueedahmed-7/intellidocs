@@ -18,6 +18,8 @@ files/
 test.ipynb
 
 serviceAccountKey.json
+serviceAccountKey*.json
+*firebase-adminsdk*.json
 .env
 .env.*
 !.env.example
