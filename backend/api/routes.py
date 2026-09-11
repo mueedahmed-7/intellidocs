@@ -169,41 +169,53 @@
 #             status_code=401,
 #             detail=str(e),
 #         )
-import shutil
-from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from api.schemas import (
+from backend.api.schemas import (
     ChatRequest,
     ChatResponse,
     UploadResponse,
+    DocumentListResponse,
+    DocumentResponse,
     RegisterRequest,
     LoginRequest,
-    LoginResponse,
+    AuthResponse,
+    UserProfile,
+    ChatListResponse,
+    ChatMessagesResponse,
+    RenameChatRequest,
+    RenameChatResponse,
+    DeleteChatResponse,
 )
 
-from Services.auth_service import AuthService
-from services import chat_engine
-from Services.document_service import DocumentService
-from utils.jwt_handler import create_access_token
-from utils.auth_dependency import get_current_user_id
-from database.firebase_db import chats_collection, messages_collection
-from datetime import datetime, timezone
+from backend.Services.auth_service import (
+    AuthService,
+    AuthStorageError,
+    DuplicateEmailError,
+    InvalidCredentialsError,
+)
+from backend.services import get_chat_engine
+from backend.rag.chatengine import ChatEngine
+from backend.Services.document_service import (
+    DocumentService,
+    DocumentStorageError,
+    DocumentTooLargeError,
+    DocumentValidationError,
+)
+from backend.utils.jwt_handler import create_access_token
+from backend.utils.auth_dependency import get_current_user_id
+from backend.Services.conversation_service import (
+    ConversationNotFoundError,
+    ConversationService,
+    ConversationStorageError,
+)
 
 
 
 router = APIRouter()
 document_service = DocumentService()
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+conversation_service = ConversationService()
 
-ALLOWED_EXTENSIONS = {
-    ".pdf",
-    ".docx",
-    ".txt",
-    ".md",
-}
-
-@router.post("/auth/register")
+@router.post("/auth/register", response_model=AuthResponse)
 def register(
     request: RegisterRequest,
 ):
@@ -216,16 +228,21 @@ def register(
             password=request.password,
         )
 
-        return {
-            "message": "User registered successfully.",
-            "user": user,
-        }
+        return AuthResponse(
+            access_token=create_access_token(user_id=user["id"]),
+            token_type="bearer",
+            user=UserProfile(**user),
+        )
 
-    except ValueError as e:
+    except DuplicateEmailError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except AuthStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+    except ValueError as error:
 
         raise HTTPException(
             status_code=400,
-            detail=str(e),
+            detail=str(error),
         )
 
 @router.post(
@@ -239,64 +256,68 @@ def chat(
 
     try:
 
-        now = datetime.now(timezone.utc).isoformat()
         chat_id = request.chat_id
 
         if chat_id:
-            chat_snapshot = chats_collection.document(chat_id).get()
-            if (
-                not chat_snapshot.exists
-                or chat_snapshot.to_dict().get("user_id") != current_user_id
-            ):
-                raise HTTPException(status_code=404, detail="Conversation not found.")
-        else:
-            # The first question becomes the readable title shown in the
-            # conversation sidebar.
-            chat_title = " ".join(request.question.split())[:60]
-            chat_reference = chats_collection.document()
-            chat_id = chat_reference.id
-            chat_reference.set(
-                {
-                    "user_id": current_user_id,
-                    "title": chat_title or "New conversation",
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            )
+            conversation_service._owned_chat(chat_id, current_user_id)
 
-        result = chat_engine.chat(
-            question=request.question,
-            top_k=request.top_k,
-            user_id=current_user_id,
+        eligible_document_ids = document_service.ready_document_ids(
+            current_user_id, request.document_ids
         )
 
-        # Store every turn under its conversation so the user can reopen it.
-        try:
-            messages_collection.add(
-                {
-                    "user_id": current_user_id,
-                    "chat_id": chat_id,
-                    "question": request.question,
-                    "answer": result["answer"],
-                    "created_at": now,
-                }
+        # A new chat is intentionally lazy: no permanent empty record exists
+        # until the first question can actually be processed.
+        if not chat_id:
+            chat_id = conversation_service.create_chat(current_user_id, request.question)
+
+        history_messages = conversation_service.recent_history(chat_id, current_user_id, limit=6)
+        conversation_history = "\n".join(
+            f"{'User' if item['role'] == 'user' else 'Assistant'}: {item['content']}"
+            for item in history_messages
+        )
+        # Selection limits RAG scope. It does not make every later question a
+        # document question: routing is deliberately decided per user message.
+        document_mode = ChatEngine.should_use_document_mode(
+            request.question,
+            has_selected_documents=bool(eligible_document_ids),
+            history_messages=history_messages,
+        )
+
+        if document_mode and not eligible_document_ids:
+            result = {"answer": "I couldn't find that information in the selected documents.", "sources": []}
+        else:
+            result = get_chat_engine().chat(
+                question=request.question,
+                top_k=request.top_k,
+                user_id=current_user_id,
+                document_ids=eligible_document_ids,
+                conversation_history=conversation_history,
+                document_mode=document_mode,
             )
-            chats_collection.document(chat_id).update({"updated_at": now})
-        except Exception as log_error:
-            print(f"[CHAT HISTORY WARNING] Could not save message: {log_error}")
+
+        conversation_service.save_exchange(chat_id, current_user_id, request.question, result["answer"], result["sources"])
 
         return ChatResponse(
             answer=result["answer"],
             chat_id=chat_id,
+            sources=result["sources"],
         )
 
+    except DocumentValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    except ConversationStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error))
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
 
         raise HTTPException(
             status_code=500,
-            detail=str(e),
+            detail="Chat could not be completed. Please try again.",
         )
 
 
@@ -304,63 +325,66 @@ def chat(
     "/documents/upload",
     response_model=UploadResponse,
 )
-def upload_document(
+async def upload_document(
     file: UploadFile = File(...),
     current_user_id: str = Depends(get_current_user_id),
 ):
 
-    allowed_extensions = {
-        ".pdf",
-        ".docx",
-        ".txt",
-        ".md",
-    }
-
-    extension = Path(file.filename).suffix.lower()
-
-    if extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported file type.",
-        )
-
     try:
-        # Save uploaded file
-        safe_filename = Path(file.filename).name
-        save_path = UPLOAD_DIR / f"{current_user_id}_{safe_filename}"
-
-        with save_path.open("wb") as buffer:
-            shutil.copyfileobj(
-                file.file,
-                buffer,
-            )
-
-        # Process through RAG ingestion
-        result = document_service.process_document(
-            file_path=str(save_path),
+        result = document_service.ingest_upload(
+            filename=file.filename,
+            content=await file.read(),
             user_id=current_user_id,
-            filename=safe_filename,
+            content_type=file.content_type,
         )
 
         return UploadResponse(
             message="Document uploaded and processed successfully.",
-            filename=safe_filename,
-            chunks_stored=result["chunks"],
+            filename=result["original_filename"],
+            chunks_stored=result["chunk_count"],
+            document_id=result["document_id"],
+            status=result["status"],
         )
+    except DocumentTooLargeError as error:
+        raise HTTPException(status_code=413, detail=str(error))
+    except DocumentValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except DocumentStorageError as error:
+        raise HTTPException(status_code=500, detail=str(error))
 
-    except Exception as e:
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
-        )
+@router.get("/documents", response_model=DocumentListResponse)
+def list_documents(current_user_id: str = Depends(get_current_user_id)):
+    try:
+        return DocumentListResponse(documents=document_service.list_documents(current_user_id))
+    except DocumentStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
-    finally:
-        file.file.close()
+
+@router.get("/documents/{document_id}", response_model=DocumentResponse)
+def get_document(document_id: str, current_user_id: str = Depends(get_current_user_id)):
+    try:
+        document = document_service.get_document(document_id, current_user_id)
+    except DocumentStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return DocumentResponse(**document)
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(document_id: str, current_user_id: str = Depends(get_current_user_id)):
+    try:
+        document_service.delete_document(document_id, current_user_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    except DocumentStorageError as error:
+        raise HTTPException(status_code=500, detail=str(error))
+    return {"message": "Document deleted successfully.", "document_id": document_id}
 
 @router.post(
     "/auth/login",
-    response_model=LoginResponse,
+    response_model=AuthResponse,
 )
 def login(
     request: LoginRequest,
@@ -377,97 +401,77 @@ def login(
             user_id=user["id"],
         )
 
-        return LoginResponse(
+        return AuthResponse(
             access_token=token,
             token_type="bearer",
+            user=UserProfile(**user),
         )
 
-    except ValueError as e:
+    except InvalidCredentialsError as error:
 
         raise HTTPException(
             status_code=401,
-            detail=str(e),
+            detail=str(error),
         )
+    except AuthStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
 
-@router.get("/chats")
+@router.get("/auth/me", response_model=UserProfile)
+def get_current_user(
+    current_user_id: str = Depends(get_current_user_id),
+):
+    try:
+        user = AuthService.get_user_by_id(current_user_id)
+    except AuthStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="Session is no longer valid. Please log in again.")
+
+    return UserProfile(**user)
+
+
+@router.get("/chats", response_model=ChatListResponse)
 def get_chats(
     current_user_id: str = Depends(get_current_user_id),
 ):
     try:
-        docs = chats_collection.where("user_id", "==", current_user_id).stream()
-        chats = [
-            {"id": doc.id, **doc.to_dict()}
-            for doc in docs
-        ]
-        # Messages created before conversations were introduced remain
-        # available as one read-only legacy conversation.
-        legacy_messages = [
-            doc.to_dict()
-            for doc in messages_collection.where("user_id", "==", current_user_id).stream()
-            if not doc.to_dict().get("chat_id")
-        ]
-        if legacy_messages:
-            chats.append(
-                {
-                    "id": "legacy-history",
-                    "title": "Earlier chat history",
-                    "updated_at": max(
-                        message.get("created_at", "") for message in legacy_messages
-                    ),
-                }
-            )
-        chats.sort(key=lambda chat: chat.get("updated_at", ""), reverse=True)
-
-        return {"chats": chats}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
-        )
+        return ChatListResponse(chats=conversation_service.list_chats(current_user_id))
+    except ConversationStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
 
-@router.get("/chats/{chat_id}/messages")
+@router.get("/chats/{chat_id}/messages", response_model=ChatMessagesResponse)
 def get_chat_messages(
     chat_id: str,
     current_user_id: str = Depends(get_current_user_id),
 ):
     try:
-        if chat_id == "legacy-history":
-            docs = messages_collection.where("user_id", "==", current_user_id).stream()
-            messages = [
-                {"id": doc.id, **doc.to_dict()}
-                for doc in docs
-                if not doc.to_dict().get("chat_id")
-            ]
-            messages.sort(key=lambda message: message.get("created_at", ""))
-            return {
-                "chat": {"id": "legacy-history", "title": "Earlier chat history"},
-                "messages": messages,
-            }
+        chat, messages = conversation_service.get_messages(chat_id, current_user_id)
+        return ChatMessagesResponse(chat=chat, messages=messages)
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    except ConversationStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
-        chat_snapshot = chats_collection.document(chat_id).get()
-        if (
-            not chat_snapshot.exists
-            or chat_snapshot.to_dict().get("user_id") != current_user_id
-        ):
-            raise HTTPException(status_code=404, detail="Conversation not found.")
 
-        # Ownership was checked against the parent chat above, so querying by
-        # chat_id alone avoids requiring a Firestore composite index.
-        docs = messages_collection.where("chat_id", "==", chat_id).stream()
-        messages = [{"id": doc.id, **doc.to_dict()} for doc in docs]
-        messages.sort(key=lambda message: message.get("created_at", ""))
+@router.patch("/chats/{chat_id}", response_model=RenameChatResponse)
+def rename_chat(chat_id: str, request: RenameChatRequest, current_user_id: str = Depends(get_current_user_id)):
+    try:
+        return RenameChatResponse(**conversation_service.rename_chat(chat_id, current_user_id, request.title))
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    except ConversationStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))
 
-        return {"chat": {"id": chat_snapshot.id, **chat_snapshot.to_dict()}, "messages": messages}
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
-        )
+@router.delete("/chats/{chat_id}", response_model=DeleteChatResponse)
+def delete_chat(chat_id: str, current_user_id: str = Depends(get_current_user_id)):
+    try:
+        result = conversation_service.delete_chat(chat_id, current_user_id)
+        return DeleteChatResponse(message="Conversation deleted successfully.", chat_id=result["chat_id"])
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    except ConversationStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error))

@@ -18,3 +18,9 @@ files/
 test.ipynb
 
 serviceAccountKey.json
+.env
+.env.*
+!.env.example
+*.json
+*.pem
+*.key

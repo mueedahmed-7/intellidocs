@@ -17,12 +17,15 @@ Auth (pick ONE, both are supported below):
 
 import os
 import json
+from pathlib import Path
 
 import firebase_admin
 from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
 
-load_dotenv()
+from backend.config import ENV_FILE, PROJECT_ROOT
+
+load_dotenv(ENV_FILE)
 
 FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -32,7 +35,10 @@ if not firebase_admin._apps:
         cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
         cred = credentials.Certificate(cred_dict)
     elif GOOGLE_APPLICATION_CREDENTIALS:
-        cred = credentials.Certificate(GOOGLE_APPLICATION_CREDENTIALS)
+        credentials_path = Path(GOOGLE_APPLICATION_CREDENTIALS)
+        if not credentials_path.is_absolute():
+            credentials_path = PROJECT_ROOT / credentials_path
+        cred = credentials.Certificate(credentials_path)
     else:
         raise ValueError(
             "No Firebase credentials configured. Set either "
@@ -53,5 +59,6 @@ documents_collection = db.collection("documents")
 chats_collection = db.collection("chats")
 messages_collection = db.collection("messages")
 face_embeddings_collection = db.collection("face_embeddings")
+documents_collection = db.collection("documents")
 
 print("Firestore connected successfully.")

@@ -1,22 +1,19 @@
-import os
-
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
 
-
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-
-ALGORITHM = "HS256"
-
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+from backend.config import (
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+    JWT_ALGORITHM,
+    JWT_SECRET_KEY,
+)
 
 
 def create_access_token(
     user_id: str,
 ):
     expire = datetime.now(timezone.utc) + timedelta(
-        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+        minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
     payload = {
@@ -26,8 +23,8 @@ def create_access_token(
 
     token = jwt.encode(
         payload,
-        SECRET_KEY,
-        algorithm=ALGORITHM,
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM,
     )
 
     return token
@@ -41,8 +38,11 @@ def decode_access_token(token: str) -> str:
     """
     payload = jwt.decode(
         token,
-        SECRET_KEY,
-        algorithms=[ALGORITHM],
+        JWT_SECRET_KEY,
+        algorithms=[JWT_ALGORITHM],
     )
 
-    return payload["sub"]
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id:
+        raise KeyError("Token is missing its subject claim.")
+    return user_id

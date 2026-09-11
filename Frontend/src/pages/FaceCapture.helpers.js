@@ -10,6 +10,10 @@ export function captureFrameAsBlob(videoElement) {
       return;
     }
 
+    if (!videoElement.videoWidth || !videoElement.videoHeight || videoElement.readyState < 2) {
+      reject(new Error("Camera is not ready. Please wait a moment and try again."));
+      return;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = videoElement.videoWidth;
     canvas.height = videoElement.videoHeight;

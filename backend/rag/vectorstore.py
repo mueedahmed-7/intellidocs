@@ -5,12 +5,13 @@ Manages storing and retrieving document embeddings
 using ChromaDB.
 """
 
+from pathlib import Path
 from typing import List
 import logging
-import uuid
 import chromadb
 import numpy as np
 from langchain_core.documents import Document
+from backend.config import CHROMA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class VectorStore:
     def __init__(
         self,
         collection_name: str = "Rag_Chatbot_Collection",
-        persist_directory: str = "./chroma_db",
+        persist_directory: str | Path = CHROMA_DIR,
     ):
         """
         Initialize the ChromaDB vector store.
@@ -34,7 +35,7 @@ class VectorStore:
         """
 
         self.collection_name = collection_name
-        self.persist_directory = persist_directory
+        self.persist_directory = str(Path(persist_directory).resolve())
 
         # Create persistent client
         self.client = chromadb.PersistentClient(
@@ -59,6 +60,7 @@ class VectorStore:
         self,
         chunks: List[Document],
         embeddings: np.ndarray,
+        ids: list[str] | None = None,
     ):
         """
         Store document chunks and their embeddings.
@@ -72,17 +74,19 @@ class VectorStore:
             raise ValueError(
                 "Number of chunks and embeddings must be equal."
             )
+        if ids is not None and len(ids) != len(chunks):
+            raise ValueError("Number of vector IDs must match number of chunks.")
         if not chunks:
             return
 
-        ids = []
+        vector_ids = []
         documents = []
         metadatas = []
         vectors = []
 
-        for chunk, embedding in zip(chunks, embeddings):
+        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
 
-            ids.append(str(uuid.uuid4()))
+            vector_ids.append(ids[index] if ids else f"vector-{index}")
 
             documents.append(chunk.page_content)
 
@@ -94,7 +98,7 @@ class VectorStore:
             vectors.append(np.asarray(embedding).tolist())
 
         self.collection.add(
-            ids=ids,
+            ids=vector_ids,
             documents=documents,
             embeddings=vectors,
             metadatas=metadatas,
@@ -108,6 +112,7 @@ class VectorStore:
         query_embedding: np.ndarray,
         top_k: int = 5,
         user_id: str | None = None,
+        document_ids: list[str] | None = None,
     ):
         """
         Retrieve the most similar chunks.
@@ -125,6 +130,9 @@ class VectorStore:
         where = None
         if user_id is not None:
             where = {"user_id": str(user_id)}
+        if document_ids is not None:
+            document_filter = {"document_id": {"$in": [str(item) for item in document_ids]}}
+            where = {"$and": [where, document_filter]} if where else document_filter
 
         # Chroma raises an error when n_results exceeds the number of vectors
         # matching a metadata filter. Return the empty result shape expected by
@@ -210,17 +218,18 @@ class VectorStore:
 
         logger.info("Collection has been reset successfully.")
 
-    def delete_document_vectors(
-        self,
-        filename: str,
-    ):
+    def delete_document_vectors(self, user_id: str, document_id: str):
         """
-        Delete vectors belonging to a specific document.
+        Delete only vectors belonging to one authenticated user's document.
         """
-
-        where = self._build_where(filename=filename)
+        where = {
+            "$and": [
+                {"user_id": str(user_id)},
+                {"document_id": str(document_id)},
+            ]
+        }
         self.collection.delete(where=where)
-        logger.info(f"Deleted vectors for document {filename}")
+        logger.info("Deleted vectors for document %s", document_id)
 
     def get_documents(
         self,

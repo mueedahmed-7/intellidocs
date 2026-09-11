@@ -674,11 +674,12 @@
 
 
 // export default Chat;
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../api";
-
-const API_BASE_URL = API_URL;
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { apiFetch, getStoredToken } from "../api";
+import { useAuth } from "../auth";
 
 let messageIdCounter = 0;
 function nextMessageId() {
@@ -694,24 +695,23 @@ function welcomeMessage() {
   };
 }
 
-// The model commonly uses Markdown for emphasis. Render the safe inline
-// formatting we support instead of displaying its Markdown characters.
-function renderBotText(text) {
-  return text.split(/(\*\*[^*]+?\*\*|`[^`]+?`)/g).map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
-    }
-
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={index}>{part.slice(1, -1)}</code>;
-    }
-
-    return part;
-  });
+function AssistantMarkdown({ content }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+        table: ({ children }) => <div className="markdown-table-wrap"><table>{children}</table></div>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 function Chat() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   // ============================================================
   // STATES
@@ -723,6 +723,9 @@ function Chat() {
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const messagesEndRef = useRef(null);
 
   // Which message is currently being spoken (null when nothing is playing)
@@ -752,12 +755,34 @@ function Chat() {
   // ============================================================
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("user_name");
-    localStorage.removeItem("user_email");
+    logout();
     navigate("/login");
   };
+
+  const loadDocuments = useCallback(async () => {
+    if (!getStoredToken()) return;
+    try {
+      const response = await apiFetch("/documents", {}, { auth: true });
+      if (response.status === 401) {
+        logout();
+        navigate("/login", { replace: true });
+        return;
+      }
+      if (!response.ok) throw new Error("Could not load your documents.");
+      const result = await response.json();
+      const loadedDocuments = result.documents || [];
+      setDocuments(loadedDocuments);
+      const readyIds = new Set(
+        loadedDocuments.filter((document) => document.status === "ready").map((document) => document.document_id)
+      );
+      setSelectedDocumentIds((previous) => previous.filter((id) => readyIds.has(id)));
+    } catch (error) {
+      console.error("Document library error:", error);
+      setStatusMessage(error.message || "Could not load your documents.");
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  }, [logout, navigate]);
 
   // ============================================================
   // LOAD THE CONVERSATION SIDEBAR
@@ -765,7 +790,7 @@ function Chat() {
 
   useEffect(() => {
     let isActive = true;
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
 
     if (!token) {
       navigate("/login", { replace: true });
@@ -776,15 +801,10 @@ function Chat() {
 
     const loadConversations = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/chats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await apiFetch("/chats", {}, { auth: true });
 
         if (response.status === 401) {
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("user_id");
-          localStorage.removeItem("user_name");
-          localStorage.removeItem("user_email");
+          logout();
           navigate("/login", { replace: true });
           return;
         }
@@ -814,7 +834,14 @@ function Chat() {
     return () => {
       isActive = false;
     };
-  }, [navigate]);
+  }, [navigate, logout]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadDocuments();
+    }, 0);
+    return () => window.clearTimeout(loadTimer);
+  }, [loadDocuments]);
 
   const handleNewChat = () => {
     if (isSending || isLoadingConversation) return;
@@ -825,15 +852,13 @@ function Chat() {
   };
 
   const handleConversationSelect = async (chatId) => {
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
     if (!token || isSending || isLoadingConversation || chatId === activeChatId) return;
 
     setIsLoadingConversation(true);
     setStatusMessage("");
     try {
-      const response = await fetch(`${API_BASE_URL}/chats/${chatId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiFetch(`/chats/${chatId}/messages`, {}, { auth: true });
       if (response.status === 401) {
         handleLogout();
         return;
@@ -841,10 +866,12 @@ function Chat() {
       if (!response.ok) throw new Error("Could not open this conversation.");
 
       const result = await response.json();
-      const restoredMessages = (result.messages || []).flatMap((entry) => [
-        { id: `${entry.id}-question`, role: "user", text: entry.question },
-        { id: `${entry.id}-answer`, role: "bot", text: entry.answer },
-      ]);
+      const restoredMessages = (result.messages || []).map((entry) => ({
+        id: entry.message_id,
+        role: entry.role === "assistant" ? "bot" : "user",
+        text: entry.content,
+        sources: entry.sources || [],
+      }));
       setActiveChatId(chatId);
       setMessages(restoredMessages.length ? restoredMessages : [welcomeMessage()]);
     } catch (error) {
@@ -865,7 +892,7 @@ function Chat() {
 
   const handleSend = async () => {
     const question = inputText.trim();
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
     const isLegacyConversation = activeChatId === "legacy-history";
 
     if (!question || isSending || isLoadingHistory || isLoadingConversation) {
@@ -889,18 +916,18 @@ function Chat() {
     setIsSending(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
+      const response = await apiFetch("/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           question,
           top_k: 5,
           chat_id: isLegacyConversation ? null : activeChatId,
+          document_ids: selectedDocumentIds,
         }),
-      });
+      }, { auth: true });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
@@ -917,16 +944,20 @@ function Chat() {
 
       const result = await response.json();
 
-      setActiveChatId(result.chat_id);
-      setConversations((previous) => {
-        const current = previous.find((chat) => chat.id === result.chat_id);
-        const updatedChat = {
-          id: result.chat_id,
-          title: current?.title || question.replace(/\s+/g, " ").slice(0, 60),
-          updated_at: new Date().toISOString(),
-        };
-        return [updatedChat, ...previous.filter((chat) => chat.id !== result.chat_id)];
-      });
+      if (result.chat_id) {
+        setActiveChatId(result.chat_id);
+        setConversations((previous) => {
+          const current = previous.find((chat) => chat.chat_id === result.chat_id);
+          const updatedChat = {
+            chat_id: result.chat_id,
+            title: current?.title || question.replace(/\s+/g, " ").slice(0, 60),
+            updated_at: new Date().toISOString(),
+            created_at: current?.created_at || new Date().toISOString(),
+            message_count: (current?.message_count || 0) + 2,
+          };
+          return [updatedChat, ...previous.filter((chat) => chat.chat_id !== result.chat_id)];
+        });
+      }
 
       setMessages((previous) => [
         ...previous,
@@ -934,6 +965,7 @@ function Chat() {
           id: nextMessageId(),
           role: "bot",
           text: result.answer,
+          sources: result.sources || [],
         },
       ]);
     } catch (error) {
@@ -996,7 +1028,7 @@ function Chat() {
 
     const formData = new FormData();
     formData.append("file", file);
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
 
     if (!token) {
       navigate("/login", { replace: true });
@@ -1007,13 +1039,10 @@ function Chat() {
     setStatusMessage(`Uploading "${file.name}"...`);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/upload`, {
+      const response = await apiFetch("/documents/upload", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: formData,
-      });
+      }, { auth: true });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
@@ -1033,6 +1062,7 @@ function Chat() {
       setStatusMessage(
         `"${result.filename}" uploaded and indexed (${result.chunks_stored} chunks).`
       );
+      await loadDocuments();
 
       setMessages((previous) => [
         ...previous,
@@ -1047,6 +1077,65 @@ function Chat() {
       setStatusMessage(error.message || "Could not upload document.");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const toggleDocumentSelection = (documentId) => {
+    setSelectedDocumentIds((previous) => (
+      previous.includes(documentId)
+        ? previous.filter((id) => id !== documentId)
+        : [...previous, documentId]
+    ));
+  };
+
+  const handleRenameConversation = async (conversation) => {
+    const title = window.prompt("Rename conversation", conversation.title);
+    if (title === null) return;
+    const normalized = title.trim();
+    if (!normalized) {
+      setStatusMessage("Conversation title cannot be blank.");
+      return;
+    }
+    try {
+      const response = await apiFetch(`/chats/${conversation.chat_id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: normalized }),
+      }, { auth: true });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Could not rename conversation.");
+      const result = await response.json();
+      setConversations((previous) => previous.map((item) => item.chat_id === result.chat_id ? { ...item, title: result.title, updated_at: result.updated_at } : item));
+    } catch (error) { setStatusMessage(error.message || "Could not rename conversation."); }
+  };
+
+  const handleDeleteConversation = async (conversation) => {
+    if (!window.confirm("Delete this conversation?")) return;
+    try {
+      const response = await apiFetch(`/chats/${conversation.chat_id}`, { method: "DELETE" }, { auth: true });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Could not delete conversation.");
+      setConversations((previous) => previous.filter((item) => item.chat_id !== conversation.chat_id));
+      if (activeChatId === conversation.chat_id) handleNewChat();
+    } catch (error) { setStatusMessage(error.message || "Could not delete conversation."); }
+  };
+
+  const handleDeleteDocument = async (documentId, filename) => {
+    if (isUploading || !window.confirm(`Delete "${filename}" and its indexed data?`)) return;
+
+    try {
+      const response = await apiFetch(`/documents/${documentId}`, { method: "DELETE" }, { auth: true });
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(errorBody?.detail || "Could not delete the document.");
+      }
+      setStatusMessage(`"${filename}" was deleted.`);
+      await loadDocuments();
+      setSelectedDocumentIds((previous) => previous.filter((id) => id !== documentId));
+    } catch (error) {
+      console.error("Document deletion error:", error);
+      setStatusMessage(error.message || "Could not delete the document.");
     }
   };
 
@@ -1066,7 +1155,7 @@ function Chat() {
     setStatusMessage("Speech stopped.");
 
     try {
-      await fetch(`${API_BASE_URL}/voice/stop`, {
+      await apiFetch("/voice/stop", {
         method: "POST",
       });
     } catch (error) {
@@ -1097,7 +1186,7 @@ function Chat() {
       const formData = new FormData();
       formData.append("text", text);
 
-      const response = await fetch(`${API_BASE_URL}/voice/speak`, {
+      const response = await apiFetch("/voice/speak", {
         method: "POST",
         body: formData,
         signal: controller.signal,
@@ -1129,7 +1218,7 @@ function Chat() {
     const controller = ttsAbortControllerRef.current;
     if (controller) {
       controller.abort();
-      fetch(`${API_BASE_URL}/voice/stop`, {
+      apiFetch("/voice/stop", {
         method: "POST",
         keepalive: true,
       }).catch(() => {});
@@ -1257,11 +1346,11 @@ function Chat() {
       {/* HEADER */}
       <header className="chat-header">
         <div className="logo">
-          RAG<span>CHAT</span>
+          Doc<span>Chat</span>
         </div>
 
         <div className="user-area">
-          <span>Welcome, User</span>
+          <span>Welcome, {user?.name || "User"}</span>
           <button onClick={handleLogout}>Logout</button>
         </div>
       </header>
@@ -1275,29 +1364,76 @@ function Chat() {
             onClick={handleNewChat}
             disabled={isSending || isLoadingConversation}
           >
-            + New chat
+            New Chat
           </button>
-          <p className="history-heading">Previous chats</p>
+          <p className="history-heading">Conversations</p>
           <div className="conversation-list">
             {isLoadingHistory && <p className="conversation-empty">Loading chats...</p>}
             {!isLoadingHistory && !conversations.length && (
               <p className="conversation-empty">Your conversations will appear here.</p>
             )}
             {conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                className={
-                  conversation.id === activeChatId
-                    ? "conversation-item active"
-                    : "conversation-item"
-                }
-                type="button"
-                onClick={() => handleConversationSelect(conversation.id)}
-                disabled={isSending || isLoadingConversation}
-                title={conversation.title}
+              <div className="conversation-item" key={conversation.chat_id}>
+                <button
+                  className={conversation.chat_id === activeChatId ? "active" : ""}
+                  type="button"
+                  onClick={() => handleConversationSelect(conversation.chat_id)}
+                  disabled={isSending || isLoadingConversation}
+                  title={conversation.title}
+                >
+                  {conversation.title}
+                </button>
+                {conversation.chat_id !== "legacy-history" && (
+                  <span className="conversation-actions">
+                    <button type="button" onClick={() => handleRenameConversation(conversation)} disabled={isSending} aria-label={`Rename ${conversation.title}`}>Rename</button>
+                    <button type="button" onClick={() => handleDeleteConversation(conversation)} disabled={isSending} aria-label={`Delete ${conversation.title}`}>Delete</button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="conversation-list" aria-label="Document library">
+            <p className="history-heading">Your Documents</p>
+            <button
+              className="new-chat-button"
+              type="button"
+              onClick={() => void loadDocuments()}
+              disabled={isLoadingDocuments || isUploading}
+            >
+              Refresh Documents
+            </button>
+            {isLoadingDocuments && <p className="conversation-empty">Loading documents...</p>}
+            {!isLoadingDocuments && !documents.length && (
+              <p className="conversation-empty">Uploaded documents will appear here.</p>
+            )}
+            {documents.map((document) => (
+              <div
+                className={`conversation-item document-row ${selectedDocumentIds.includes(document.document_id) ? "selected" : ""} ${document.status === "ready" ? "" : "disabled"}`}
+                key={document.document_id}
+                role={document.status === "ready" ? "button" : undefined}
+                tabIndex={document.status === "ready" ? 0 : undefined}
+                aria-pressed={document.status === "ready" ? selectedDocumentIds.includes(document.document_id) : undefined}
+                onClick={document.status === "ready" ? () => toggleDocumentSelection(document.document_id) : undefined}
+                onKeyDown={document.status === "ready" ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggleDocumentSelection(document.document_id);
+                  }
+                } : undefined}
               >
-                {conversation.title}
-              </button>
+                <span title={document.original_filename}>📄 {document.original_filename} {selectedDocumentIds.includes(document.document_id) && "✓"}</span>
+                <small>{document.status} · {document.chunk_count} chunks</small>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDeleteDocument(document.document_id, document.original_filename);
+                  }}
+                  disabled={document.status === "processing" || isUploading}
+                >
+                  Delete
+                </button>
+              </div>
             ))}
           </div>
         </aside>
@@ -1321,10 +1457,20 @@ function Chat() {
               </div>
 
               <div className="message-text">
-                {message.role === "bot" ? renderBotText(message.text) : message.text}
+                {message.role === "bot" ? <AssistantMarkdown content={message.text} /> : message.text}
               </div>
 
               {message.role === "bot" && (
+                <>
+                {message.sources?.length > 0 && (
+                  <div className="message-sources">
+                    Sources: {message.sources.map((source) => (
+                      <div key={`${source.document_id}-${source.chunk_index}`}>
+                        {source.filename} — {source.page ? `page ${source.page}` : `chunk ${source.chunk_index}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <button
                   className="speak-button"
                   onClick={() => handleSpeak(message.id, message.text)}
@@ -1333,6 +1479,7 @@ function Chat() {
                 >
                   {speakingId === message.id ? "⏹" : "🔊"}
                 </button>
+                </>
               )}
             </div>
           ))}
@@ -1348,6 +1495,22 @@ function Chat() {
 
         {/* STATUS */}
         {statusMessage && <p className="status-message">{statusMessage}</p>}
+
+        {selectedDocumentIds.length > 0 && (
+          <div className="selected-document-chips" aria-label="Documents selected for chat">
+            <span>Using documents:</span>
+            {documents.filter((document) => selectedDocumentIds.includes(document.document_id)).map((document) => (
+              <button
+                type="button"
+                key={document.document_id}
+                onClick={() => toggleDocumentSelection(document.document_id)}
+                aria-label={`Remove ${document.original_filename} from chat`}
+              >
+                📄 {document.original_filename} ×
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* CHAT INPUT */}
         <div className="chat-input-area">
@@ -1384,7 +1547,7 @@ function Chat() {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder={isLoadingHistory ? "Loading your conversation..." : "Ask something..."}
+            placeholder={isLoadingHistory ? "Loading your conversation..." : "Ask a question about your documents..."}
             disabled={isLoadingHistory || isLoadingConversation}
           />
 

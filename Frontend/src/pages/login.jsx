@@ -117,12 +117,14 @@
 // export default Login;
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { API_URL } from "../api";
+import { apiFetch } from "../api";
+import { useAuth } from "../auth";
 
 
 function Login() {
 
   const navigate = useNavigate();
+  const { setSession } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -138,8 +140,8 @@ function Login() {
 
     try {
 
-      const response = await fetch(
-        `${API_URL}/auth/login`,
+      const response = await apiFetch(
+        "/auth/login",
         {
           method: "POST",
 
@@ -165,11 +167,7 @@ function Login() {
         return;
       }
 
-      // Save JWT token
-      localStorage.setItem(
-        "access_token",
-        data.access_token
-      );
+      setSession(data);
 
       // Go to chatbot
       navigate("/chat");
@@ -195,13 +193,13 @@ function Login() {
       <div className="auth-card">
 
         <div className="logo">
-          RAG<span>CHAT</span>
+          Doc<span>Chat</span>
         </div>
 
         <h1>Welcome Back</h1>
 
         <p className="subtitle">
-          Login to your AI document assistant
+          Sign in to your AI document assistant
         </p>
 
         <form onSubmit={handleLogin}>
@@ -251,7 +249,7 @@ function Login() {
         </form>
 
         <div className="divider">
-          <span>OR</span>
+          <span>OR CONTINUE WITH</span>
         </div>
 
         <button

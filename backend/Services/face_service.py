@@ -94,10 +94,18 @@ maps directly back to a `users` account.
 
 import numpy as np
 
-from database.firebase_db import face_embeddings_collection, users_collection
+from backend.database.firebase_db import face_embeddings_collection, users_collection
 from member3.face.face_utils import detect_and_embed_from_image
 from member3.face.config import MATCH_COSINE_THRESHOLD
 from member3.face.face_utils import compute_cosine_similarity
+
+
+class FaceValidationError(ValueError):
+    """A user-correctable capture or biometric-record error."""
+
+
+class FaceStorageError(Exception):
+    """Firestore is unavailable or could not safely persist face data."""
 
 
 class FaceService:
@@ -108,21 +116,26 @@ class FaceService:
         Detect a face in the given image and store its embedding
         under the given (already-authenticated) user_id in Firestore.
         """
-        user_doc = users_collection.document(user_id).get()
+        if not image_bytes:
+            raise FaceValidationError("Invalid image.")
+        try:
+            user_doc = users_collection.document(user_id).get()
+        except Exception as error:
+            raise FaceStorageError("Face storage is unavailable.") from error
         if not user_doc.exists:
-            raise ValueError("User account not found.")
+            raise FaceValidationError("User account not found.")
 
         embedding, error = detect_and_embed_from_image(None, image_bytes)
 
         if error:
-            raise ValueError(error)
+            raise FaceValidationError(error)
 
-        face_embeddings_collection.document(user_id).set(
-            {
-                "user_id": user_id,
-                "embedding": embedding.astype(float).tolist(),
-            }
-        )
+        try:
+            face_embeddings_collection.document(user_id).set(
+                {"user_id": user_id, "embedding": embedding.astype(float).tolist()}
+            )
+        except Exception as error:
+            raise FaceStorageError("Face storage is unavailable.") from error
 
         return {
             "success": True,
@@ -136,31 +149,45 @@ class FaceService:
         registered embedding in Firestore. Returns the matched user's
         id/name/email if it clears the similarity threshold.
         """
+        if not image_bytes:
+            raise FaceValidationError("Invalid image.")
         embedding, error = detect_and_embed_from_image(None, image_bytes)
 
         if error:
-            raise ValueError(error)
+            raise FaceValidationError(error)
 
-        docs = list(face_embeddings_collection.stream())
+        try:
+            docs = list(face_embeddings_collection.stream())
+        except Exception as error:
+            raise FaceStorageError("Face storage is unavailable.") from error
 
         if not docs:
-            raise ValueError("No registered faces found.")
+            raise FaceValidationError("No registered faces found.")
 
         best_user_id = None
         best_similarity = -1.0
 
         for doc in docs:
-            data = doc.to_dict()
-            stored_embedding = np.array(data["embedding"], dtype=np.float32)
+            data = doc.to_dict() or {}
+            stored_user_id = data.get("user_id")
+            try:
+                stored_embedding = np.asarray(data.get("embedding"), dtype=np.float32).reshape(-1)
+            except (TypeError, ValueError):
+                continue
+            if not stored_user_id or stored_embedding.shape != embedding.shape or not np.isfinite(stored_embedding).all():
+                continue
 
             similarity = compute_cosine_similarity(embedding, stored_embedding)
 
             if similarity > best_similarity:
                 best_similarity = similarity
-                best_user_id = data["user_id"]
+                best_user_id = stored_user_id
 
         if best_user_id is not None and best_similarity >= MATCH_COSINE_THRESHOLD:
-            user_doc = users_collection.document(best_user_id).get()
+            try:
+                user_doc = users_collection.document(best_user_id).get()
+            except Exception as error:
+                raise FaceStorageError("Face storage is unavailable.") from error
 
             if not user_doc.exists:
                 return {
@@ -168,7 +195,9 @@ class FaceService:
                     "message": "Matched face has no linked account.",
                 }
 
-            user = user_doc.to_dict()
+            user = user_doc.to_dict() or {}
+            if not user.get("name") or not user.get("email"):
+                return {"success": False, "message": "Matched face has an invalid account record."}
 
             return {
                 "success": True,

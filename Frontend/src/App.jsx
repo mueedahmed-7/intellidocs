@@ -7,21 +7,24 @@ import {
 
 import "./App.css";
 
-import Login from "./pages/Login.jsx";
-import Register from "./pages/Register.jsx";
+import Login from "./pages/login.jsx";
+import Register from "./pages/register.jsx";
 import FaceRegister from "./pages/FaceRegister.jsx";
-import FaceLogin from "./pages/FaceLogin.jsx";
-import Chat from "./pages/Chat.jsx";
+import FaceLogin from "./pages/facelogin.jsx";
+import Chat from "./pages/chat.jsx";
+import { AuthProvider, useAuth } from "./auth";
 
 function ProtectedRoute({ children }) {
-  const token = localStorage.getItem("access_token");
+  const { user, isRestoring } = useAuth();
 
-  return token ? children : <Navigate to="/login" replace />;
+  if (isRestoring) return null;
+  return user ? children : <Navigate to="/login" replace />;
 }
 
 function App() {
 
   return (
+    <AuthProvider>
     <BrowserRouter>
 
       <Routes>
@@ -54,7 +57,7 @@ function App() {
 
         <Route
           path="/face-register"
-          element={<FaceRegister />}
+          element={<ProtectedRoute><FaceRegister /></ProtectedRoute>}
         />
 
 
@@ -88,6 +91,7 @@ function App() {
       </Routes>
 
     </BrowserRouter>
+    </AuthProvider>
   );
 }
 

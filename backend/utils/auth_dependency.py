@@ -8,7 +8,7 @@ logged in (e.g. "set up face login").
 from fastapi import Header, HTTPException
 from jose import JWTError
 
-from utils.jwt_handler import decode_access_token
+from backend.utils.jwt_handler import decode_access_token
 
 
 def get_current_user_id(authorization: str = Header(default=None)) -> str:

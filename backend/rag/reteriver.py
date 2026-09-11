@@ -5,10 +5,22 @@ Responsible for retrieving the most relevant
 document chunks from the vector database.
 """
 
-from typing import List, Dict
+from dataclasses import dataclass
+from typing import Dict, List
 
-from rag.embeddings import EmbeddingManager
-from rag.vectorstore import VectorStore
+from backend.rag.embeddings import EmbeddingManager
+from backend.rag.vectorstore import VectorStore
+from backend.config import RAG_DISTANCE_THRESHOLD
+
+
+@dataclass
+class RetrievalResult:
+    content: str
+    document_id: str
+    filename: str
+    chunk_index: int
+    page: int | None
+    distance: float
 
 
 class Retriever:
@@ -21,7 +33,7 @@ class Retriever:
         self,
         embedding_manager: EmbeddingManager,
         vector_store: VectorStore,
-        distance_threshold: float = 1.5
+        distance_threshold: float = RAG_DISTANCE_THRESHOLD
     ):
         """
         Initialize the retriever.
@@ -40,7 +52,8 @@ class Retriever:
         query: str,
         top_k: int = 5,
         user_id: str | None = None,
-    ) -> List[Dict]:
+        document_ids: list[str] | None = None,
+    ) -> List[RetrievalResult]:
         """
         Retrieve the most relevant document chunks.
 
@@ -61,9 +74,11 @@ class Retriever:
             query_embedding=query_embedding,
             top_k=top_k,
             user_id=user_id,
+            document_ids=document_ids,
         )
 
-        retrieved_chunks = []
+        retrieved_chunks: list[RetrievalResult] = []
+        seen_content = set()
 
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
@@ -82,18 +97,23 @@ class Retriever:
             distances,
         ):
 
-            if distance > self.distance_threshold:
+            # Chroma's default metric for this collection is squared L2 distance:
+            # lower values are more similar. Embeddings are normalized before storage.
+            if distance > self.distance_threshold or not metadata.get("document_id"):
                 continue
-
+            if doc in seen_content:
+                continue
+            seen_content.add(doc)
             retrieved_chunks.append(
-                {
-                    "content": doc,
-                    "metadata": metadata,
-                    "distance": distance,
-                }
+                RetrievalResult(
+                    content=doc,
+                    document_id=str(metadata["document_id"]),
+                    filename=metadata.get("original_filename", metadata.get("filename", "Document")),
+                    chunk_index=int(metadata.get("chunk_index", 0)),
+                    page=metadata.get("page") if isinstance(metadata.get("page"), int) else metadata.get("page_number"),
+                    distance=float(distance),
+                )
             )
-        print(f"Retrieved {len(retrieved_chunks)} relevant chunks.")
-        print(f"Retrieved Chunks: {retrieved_chunks}")
         return retrieved_chunks
 
     def retrieve_document(

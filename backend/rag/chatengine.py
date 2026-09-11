@@ -1,131 +1,109 @@
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
+from langchain_groq import ChatGroq
+import re
 
-from rag.reteriver import Retriever
-from rag.promptbuilder import PromptBuilder
+from backend.rag.promptbuilder import PromptBuilder
+from backend.rag.reteriver import Retriever
+
 
 class ChatEngine:
-    """
-    Orchestrates the complete RAG workflow.
-
-    Workflow:
-        User Question
-              │
-              ▼
-        Save User Message
-              │
-              ▼
-        Retriever
-              │
-              ▼
-        Prompt Builder
-              │
-              ▼
-           Groq LLM
-              │
-              ▼
-        Save Assistant Message
-              │
-              ▼
-         Final Response
-    """
-
-    def __init__(
-        self,
-        retriever: Retriever,
-        prompt_builder: PromptBuilder,
-        api_key: str,
-        model_name: str = "openai/gpt-oss-120b",
-        temperature: float = 0.2,
-    ):
-        """
-        Initialize Chat Engine.
-
-        Args:
-            retriever: Retriever instance.
-            prompt_builder: PromptBuilder instance.
-            api_key: Groq API key.
-            model_name: Groq model.
-            temperature: LLM temperature.
-        """
-
+    DOCUMENT_REFERENCE_PATTERN = re.compile(
+        r"\b(this|my|the|an|a)\s+(document|pdf|file|report|voucher)\b|"
+        r"\b(uploaded|selected)\s+(document|pdf|file|report|voucher)\b|"
+        r"\baccording to\b|\bin the (document|pdf|file|report|voucher)\b|"
+        r"\bfrom the (document|pdf|file|report|voucher)\b|"
+        r"\bsummarize (this|my|the)?\s*(document|pdf|file|report|voucher)\b",
+        re.IGNORECASE,
+    )
+    # These are common general-knowledge topics, not document routing keywords.
+    # They prevent an unrelated selected file from taking over a normal AI chat.
+    GENERIC_KNOWLEDGE_PATTERN = re.compile(
+        r"\b(ai|artificial intelligence|machine learning|deep learning|python|cnn|"
+        r"logistic regression|sorting algorithm|fyp|capital of france|write an email)\b",
+        re.IGNORECASE,
+    )
+    # A small set of factual fields commonly asked about in uploaded paperwork.
+    DOCUMENT_FACT_PATTERN = re.compile(
+        r"\b(voucher|invoice|receipt|statement|form|fee|due date|deadline|amount|"
+        r"voucher number|reference number|page|signed|signature)\b",
+        re.IGNORECASE,
+    )
+    DOCUMENT_FOLLOW_UP_PATTERN = re.compile(
+        r"\b(its|it|that|this|there|the amount|the date|the deadline|the second one)\b",
+        re.IGNORECASE,
+    )
+    def __init__(self, retriever: Retriever, prompt_builder: PromptBuilder, api_key: str,
+                 model_name: str = "openai/gpt-oss-120b", temperature: float = 0.2):
         self.retriever = retriever
         self.prompt_builder = prompt_builder
-        self.llm = ChatGroq(
-            api_key=api_key,
-            model=model_name,
-            temperature=temperature,
-            reasoning_effort="low",
-            reasoning_format="hidden",
+        self.llm = ChatGroq(api_key=api_key, model=model_name, temperature=temperature,
+                            reasoning_effort="low", reasoning_format="hidden")
+
+    @classmethod
+    def is_explicit_document_request(cls, question: str) -> bool:
+        return bool(cls.DOCUMENT_REFERENCE_PATTERN.search(question))
+
+    @classmethod
+    def is_document_follow_up(cls, question: str, history_messages: list[dict]) -> bool:
+        """Recognize a short reference only when the immediately prior answer was sourced."""
+        last_assistant = next(
+            (item for item in reversed(history_messages) if item.get("role") == "assistant"),
+            None,
+        )
+        return bool(
+            last_assistant
+            and last_assistant.get("sources")
+            and cls.DOCUMENT_FOLLOW_UP_PATTERN.search(question)
         )
 
-    def chat(
-        self,
+    @classmethod
+    def should_use_document_mode(
+        cls,
         question: str,
-        top_k: int = 5,
-        user_id: str | None = None,
-    ) -> dict:
-        """
-        Complete RAG pipeline.
-
-        Args:
-            question: User question.
-            top_k: Number of retrieved chunks.
-
-        Returns:
-            LLM response.
-        """
-        summary_keywords = ("summarize", "summarise", "summary", "summerize")
-        is_summary_request = any(
-            keyword in question.lower() for keyword in summary_keywords
+        has_selected_documents: bool,
+        history_messages: list[dict],
+    ) -> bool:
+        """Choose RAG per message; selected documents provide scope, never intent alone."""
+        if cls.is_explicit_document_request(question):
+            return True
+        if cls.GENERIC_KNOWLEDGE_PATTERN.search(question):
+            return False
+        if not has_selected_documents:
+            return False
+        return bool(
+            cls.DOCUMENT_FACT_PATTERN.search(question)
+            or cls.is_document_follow_up(question, history_messages)
         )
 
-        # A semantic search for "summarize my last uploaded file" often has no
-        # textual overlap with the document. Retrieve the latest owned document
-        # directly for summary requests; otherwise use normal semantic search.
-        if is_summary_request and user_id:
-            retrieved_chunks = self.retriever.retrieve_latest_document(
-                user_id=user_id,
-            )
-            if retrieved_chunks:
-                question = (
-                    "Provide a concise, well-structured summary of the user's "
-                    "most recently uploaded document. Cover its purpose, key "
-                    "points, and conclusions using only the supplied context."
-                )
-        else:
+    def _invoke(self, prompt: str) -> str:
+        try:
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+        except Exception as error:
+            raise RuntimeError("The language model is temporarily unavailable. Please try again.") from error
+        return response.content
+
+    def chat(self, question: str, top_k: int = 5, user_id: str | None = None,
+             document_ids: list[str] | None = None, conversation_history: str = "",
+             document_mode: bool = True) -> dict:
+        """Use strict RAG in document mode, otherwise provide general AI chat."""
+        retrieved_chunks = []
+        if document_mode and document_ids:
             retrieved_chunks = self.retriever.retrieve(
-                query=question,
-                top_k=top_k,
-                user_id=user_id,
+                query=question, top_k=top_k, user_id=user_id, document_ids=document_ids
             )
-            
-        # -----------------------------
-        # Build prompt
-        # -----------------------------
-        prompt = self.prompt_builder.build_prompt(
-            query=question,
-            retrieved_chunks=retrieved_chunks,
-        )
-
-        # -----------------------------
-        # Send prompt to Groq
-        # -----------------------------
-        response = self.llm.invoke(
-            [HumanMessage(content=prompt)]
-        )
-
-        answer = response.content
-
-        
-        
-        return {
-            "answer": answer,
-            "sources": [
-                {
-                    "metadata": chunk["metadata"],
-                    "distance": chunk["distance"],
-                }
-                for chunk in retrieved_chunks
-            ],
-        }
+        if retrieved_chunks:
+            prompt = self.prompt_builder.build_prompt(question, retrieved_chunks, conversation_history)
+            return {
+                "answer": self._invoke(prompt),
+                "sources": [
+                    {"document_id": item.document_id, "filename": item.filename,
+                     "chunk_index": item.chunk_index, "page": item.page, "distance": item.distance}
+                    for item in retrieved_chunks
+                ],
+            }
+        if document_mode:
+            return {
+                "answer": "I couldn't find that information in the selected documents.",
+                "sources": [],
+            }
+        return {"answer": self._invoke(self.prompt_builder.build_generic_prompt(question, conversation_history)), "sources": []}

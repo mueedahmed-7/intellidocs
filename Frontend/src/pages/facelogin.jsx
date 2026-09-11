@@ -646,15 +646,17 @@
 
 // export default FaceLogin;
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { API_URL } from "../api";
+import { apiFetch } from "../api";
+import { useAuth } from "../auth";
 import { captureFrameAsBlob } from "./FaceCapture.helpers";
 
 function FaceLogin() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const navigate = useNavigate();
+  const { setSession } = useAuth();
 
   const [cameraStarted, setCameraStarted] = useState(false);
   const [error, setError] = useState("");
@@ -664,13 +666,13 @@ function FaceLogin() {
   const startCamera = async () => {
     try {
       setError("");
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera is not available in this browser.");
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       setCameraStarted(true);
     } catch (err) {
-      console.error(err);
-      setError("Camera permission is required for face login.");
+      setError(err.name === "NotAllowedError" ? "Camera permission is required for face login." : "Camera is unavailable. Please check that it is connected and not in use.");
     }
   };
 
@@ -680,6 +682,8 @@ function FaceLogin() {
       streamRef.current = null;
     }
   };
+
+  useEffect(() => () => stopCamera(), []);
 
   const loginWithFace = async () => {
     if (!cameraStarted) {
@@ -697,29 +701,28 @@ function FaceLogin() {
       const formData = new FormData();
       formData.append("image", blob, "face.jpg");
 
-      const response = await fetch(`${API_URL}/face/login`, {
+      const response = await apiFetch("/face/login", {
         method: "POST",
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-            if (data.success) {
-        setMessage(`Welcome, ${data.name}!`);
+      if (response.ok && data.success) {
+        setMessage(`Welcome, ${data.user.name}!`);
         stopCamera();
 
-        localStorage.setItem("access_token", data.access_token);
-        localStorage.setItem("user_id", data.user_id);
-        localStorage.setItem("user_name", data.name);
-        localStorage.setItem("user_email", data.email);
+        setSession({
+          access_token: data.access_token,
+          user: data.user,
+        });
 
         setTimeout(() => navigate("/chat"), 800);
       } else {
-        setError(data.message || "Face not recognized.");
+        setError(data.detail || data.message || "Face not recognized.");
       }
     } catch (err) {
-      console.error(err);
-      setError("Could not reach the backend.");
+      setError(err.message || "Could not reach the backend.");
     } finally {
       setLoggingIn(false);
     }
@@ -729,7 +732,7 @@ function FaceLogin() {
     <div className="auth-page">
       <div className="auth-card face-card">
         <div className="logo">
-          RAG<span>CHAT</span>
+          Doc<span>Chat</span>
         </div>
 
         <h1>Face Login</h1>
@@ -759,7 +762,7 @@ function FaceLogin() {
             ? "Open Camera"
             : loggingIn
             ? "Verifying..."
-            : "Login with Face"}
+            : "Capture & Login"}
         </button>
 
         <Link to="/login" className="back-link">

@@ -102,10 +102,22 @@
 #         }
 import bcrypt
 
-from database.firebase_db import users_collection
+from backend.database.firebase_db import users_collection
 
 
 MAX_BCRYPT_PASSWORD_BYTES = 72
+
+
+class DuplicateEmailError(ValueError):
+    """Raised when an account already uses the requested email."""
+
+
+class InvalidCredentialsError(ValueError):
+    """Raised for either an unknown email or an invalid password."""
+
+
+class AuthStorageError(RuntimeError):
+    """Raised when Firestore cannot complete an authentication operation."""
 
 
 class AuthService:
@@ -149,15 +161,15 @@ class AuthService:
 
         email = AuthService.normalize_email(email)
 
-        # Check whether user already exists
-        existing = list(
-            users_collection.where("email", "==", email).limit(1).stream()
-        )
+        try:
+            existing = list(
+                users_collection.where("email", "==", email).limit(1).stream()
+            )
+        except Exception as error:
+            raise AuthStorageError("Authentication service is temporarily unavailable.") from error
 
         if existing:
-            raise ValueError(
-                "User with this email already exists."
-            )
+            raise DuplicateEmailError("An account with this email already exists.")
 
         hashed_password = AuthService.hash_password(password)
 
@@ -167,8 +179,11 @@ class AuthService:
             "password": hashed_password,
         }
 
-        doc_ref = users_collection.document()
-        doc_ref.set(user)
+        try:
+            doc_ref = users_collection.document()
+            doc_ref.set(user)
+        except Exception as error:
+            raise AuthStorageError("Authentication service is temporarily unavailable.") from error
 
         return {
             "id": doc_ref.id,
@@ -183,14 +198,15 @@ class AuthService:
     ):
         email = AuthService.normalize_email(email)
 
-        results = list(
-            users_collection.where("email", "==", email).limit(1).stream()
-        )
+        try:
+            results = list(
+                users_collection.where("email", "==", email).limit(1).stream()
+            )
+        except Exception as error:
+            raise AuthStorageError("Authentication service is temporarily unavailable.") from error
 
         if not results:
-            raise ValueError(
-                "Invalid email or password."
-            )
+            raise InvalidCredentialsError("Invalid email or password.")
 
         doc = results[0]
         user = doc.to_dict()
@@ -201,9 +217,7 @@ class AuthService:
         )
 
         if not password_valid:
-            raise ValueError(
-                "Invalid email or password."
-            )
+            raise InvalidCredentialsError("Invalid email or password.")
 
         return {
             "id": doc.id,
@@ -213,7 +227,10 @@ class AuthService:
 
     @staticmethod
     def get_user_by_id(user_id: str):
-        doc = users_collection.document(user_id).get()
+        try:
+            doc = users_collection.document(user_id).get()
+        except Exception as error:
+            raise AuthStorageError("Authentication service is temporarily unavailable.") from error
 
         if not doc.exists:
             return None

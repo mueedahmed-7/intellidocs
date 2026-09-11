@@ -5,12 +5,11 @@ Responsible for generating embeddings using
 Sentence Transformers.
 """
 
-from typing import List
+from typing import Any, List
 
 import logging
 import numpy as np
 from langchain_core.documents import Document
-from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +31,17 @@ class EmbeddingManager:
         """
 
         self.model_name = model_name
+        self.model = None
 
-        logger.info(f"Loading embedding model: {self.model_name}")
+    def _get_model(self) -> Any:
+        """Load the embedding model only when a document or chat needs it."""
+        if self.model is None:
+            logger.info(f"Loading embedding model: {self.model_name}")
+            from sentence_transformers import SentenceTransformer
 
-        self.model = SentenceTransformer(self.model_name)
-
-        self.embedding_dimension = (
-            self.model.get_sentence_embedding_dimension()
-        )
-
-        logger.info("Embedding model loaded successfully.")
-        logger.info(f"Embedding Dimension: {self.embedding_dimension}")
+            self.model = SentenceTransformer(self.model_name)
+            logger.info("Embedding model loaded successfully.")
+        return self.model
 
     def generate_embeddings(
         self,
@@ -65,7 +64,7 @@ class EmbeddingManager:
 
         logger.info(f"Generating embeddings for {len(texts)} chunks...")
 
-        embeddings = self.model.encode(
+        embeddings = self._get_model().encode(
             texts,
             show_progress_bar=True,
             convert_to_numpy=True,
@@ -90,7 +89,7 @@ class EmbeddingManager:
             Query embedding.
         """
 
-        embedding = self.model.encode(
+        embedding = self._get_model().encode(
             query,
             convert_to_numpy=True,
             normalize_embeddings=True,

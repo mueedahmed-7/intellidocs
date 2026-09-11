@@ -346,11 +346,13 @@
 // export default Register;
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { API_URL } from "../api";
+import { apiFetch } from "../api";
+import { useAuth } from "../auth";
 
 function Register() {
 
   const navigate = useNavigate();
+  const { setSession } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -378,7 +380,7 @@ function Register() {
 
     try {
       // 1. Create the account
-      const registerResponse = await fetch(`${API_URL}/auth/register`, {
+      const registerResponse = await apiFetch("/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password }),
@@ -401,26 +403,9 @@ function Register() {
         return;
       }
 
-      // 2. Log the new account in right away, so the face-registration
-      //    step (which requires a Bearer token) can use it immediately.
-      const loginResponse = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      setSession(registerData);
 
-      const loginData = await loginResponse.json();
-
-      if (!loginResponse.ok) {
-        setError("Account created, but automatic login failed. Please log in manually.");
-        setSubmitting(false);
-        navigate("/login");
-        return;
-      }
-
-      localStorage.setItem("access_token", loginData.access_token);
-
-      // 3. Face registration is a required part of account setup.
+      // 2. Face registration is a required part of account setup.
       navigate("/face-register");
 
     } catch (err) {
@@ -438,13 +423,13 @@ function Register() {
       <div className="auth-card">
 
         <div className="logo">
-          RAG<span>CHAT</span>
+          Doc<span>Chat</span>
         </div>
 
         <h1>Create Account</h1>
 
         <p className="subtitle">
-          Create your RAG chatbot account
+          Create your account to start chatting with your documents.
         </p>
 
 

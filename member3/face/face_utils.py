@@ -109,6 +109,7 @@
 #     return cap
 import sys
 import urllib.request
+from functools import lru_cache
 # pyrefly: ignore [missing-import]
 import cv2
 # pyrefly: ignore [missing-import]
@@ -154,6 +155,7 @@ def ensure_models_exist():
         print(f"SFace face recognition model not found locally.")
         download_file(SFACE_URL, SFACE_PATH)
 
+@lru_cache(maxsize=8)
 def get_face_detector(width: int, height: int) -> cv2.FaceDetectorYN:
     """Initializes and returns the YuNet face detector with the specified input frame dimensions."""
     ensure_models_exist()
@@ -165,6 +167,7 @@ def get_face_detector(width: int, height: int) -> cv2.FaceDetectorYN:
         nms_threshold=NMS_THRESHOLD
     )
 
+@lru_cache(maxsize=1)
 def get_face_recognizer() -> cv2.FaceRecognizerSF:
     """Initializes and returns the SFace face recognizer."""
     ensure_models_exist()
@@ -234,11 +237,13 @@ def detect_and_embed_from_image(
 
     Returns: (embedding: np.ndarray, error_message: str | None)
     """
+    if not image_bytes:
+        return None, "Invalid image."
     file_bytes = np.frombuffer(image_bytes, dtype=np.uint8)
     frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
     if frame is None:
-        return None, "Could not decode image."
+        return None, "Unable to read the captured image."
 
     height, width = frame.shape[:2]
 
@@ -255,6 +260,11 @@ def detect_and_embed_from_image(
 
     face = faces[0]
 
-    embedding = extract_embedding(recognizer, frame, face)
+    try:
+        embedding = extract_embedding(recognizer, frame, face)
+    except cv2.error:
+        return None, "Unable to process the detected face. Please try again."
+    if embedding is None or embedding.size == 0 or not np.isfinite(embedding).all():
+        return None, "Unable to process the detected face. Please try again."
 
     return embedding, None

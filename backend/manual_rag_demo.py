@@ -1,9 +1,12 @@
-from rag.loader import DocumentLoader
-from rag.splitter import DocumentSplitter
+"""Manual RAG demonstration; not part of the automated test suite."""
+
+from backend.rag.loader import DocumentLoader
+from backend.rag.splitter import DocumentSplitter
 
 from pathlib import Path
+from backend.config import BACKEND_DIR
 
-files_dir = Path.cwd() / "files"
+files_dir = BACKEND_DIR / "files"
 pdf_files = list(files_dir.glob("*.pdf"))
 if not pdf_files:
 	raise FileNotFoundError(f"No PDF found in {files_dir.resolve()}")
@@ -18,7 +21,7 @@ chunks = splitter.split_documents(doc)
 print(f"Number of chunks: {len(chunks)}")
 print(chunks)
 
-from rag.embeddings import EmbeddingManager
+from backend.rag.embeddings import EmbeddingManager
 
 embedding_manager = EmbeddingManager()
 embeddings = embedding_manager.generate_embeddings(chunks)
@@ -26,7 +29,7 @@ embeddings = embedding_manager.generate_embeddings(chunks)
 print(len(embeddings))
 print(embeddings)
 
-from rag.vectorstore import VectorStore
+from backend.rag.vectorstore import VectorStore
 
 store = VectorStore()
 store.add_documents(chunks, embeddings)
@@ -36,7 +39,7 @@ print(f"Stored chunks: {store.count()}")
 query = "What is ML?"
 print(f"Query: {query}")
 
-from rag.reteriver import Retriever
+from backend.rag.reteriver import Retriever
 
 retriever = Retriever(embedding_manager, store)
 results = retriever.retrieve(query, top_k=3)

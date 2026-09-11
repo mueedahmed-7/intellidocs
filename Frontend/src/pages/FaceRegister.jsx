@@ -658,7 +658,7 @@
 // export default FaceRegister;
 import { useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../api";
+import { apiFetch, getStoredToken } from "../api";
 import { captureFrameAsBlob } from "./FaceCapture.helpers";
 
 // This page sets up Face Login for an ALREADY logged-in user.
@@ -679,7 +679,7 @@ function FaceRegister() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
     if (!token) {
       // Not logged in — face registration needs an existing account.
       navigate("/login");
@@ -689,13 +689,13 @@ function FaceRegister() {
   const startCamera = async () => {
     try {
       setError("");
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera is not available in this browser.");
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       setCameraStarted(true);
     } catch (err) {
-      console.error(err);
-      setError(`Camera error: ${err.name} - ${err.message}`);
+      setError(err.name === "NotAllowedError" ? "Camera permission is required for face registration." : "Camera is unavailable. Please check that it is connected and not in use.");
     }
   };
 
@@ -706,8 +706,10 @@ function FaceRegister() {
     }
   };
 
+  useEffect(() => () => stopCamera(), []);
+
   const registerFace = async () => {
-    const token = localStorage.getItem("access_token");
+    const token = getStoredToken();
 
     if (!token) {
       setError("You must be logged in to set up face login.");
@@ -730,26 +732,22 @@ function FaceRegister() {
       const formData = new FormData();
       formData.append("image", blob, "face.jpg");
 
-      const response = await fetch(`${API_URL}/face/register`, {
+      const response = await apiFetch("/face/register", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: formData,
-      });
+      }, { auth: true });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (data.success) {
+      if (response.ok && data.success) {
         setMessage("Face login set up successfully!");
         stopCamera();
         setTimeout(() => navigate("/chat"), 1200);
       } else {
-        setError(data.message || "Registration failed.");
+        setError(data.detail || data.message || "Registration failed.");
       }
     } catch (err) {
-      console.error(err);
-      setError("Could not reach the backend.");
+      setError(err.message || "Could not reach the backend.");
     } finally {
       setRegistering(false);
     }
@@ -759,13 +757,13 @@ function FaceRegister() {
     <div className="auth-page">
       <div className="auth-card face-card">
         <div className="logo">
-          RAG<span>CHAT</span>
+          Doc<span>Chat</span>
         </div>
 
-        <h1>Set Up Face Login</h1>
+        <h1>Register Your Face</h1>
 
         <p className="subtitle">
-          Link your face to your account for faster logins next time.
+          Capture your face to complete registration.
         </p>
 
         <div className="camera-container">
@@ -793,7 +791,7 @@ function FaceRegister() {
             onClick={registerFace}
             disabled={registering}
           >
-            {registering ? "Saving..." : "Capture & Save Face"}
+            {registering ? "Saving..." : "Capture Photo"}
           </button>
         )}
       </div>
