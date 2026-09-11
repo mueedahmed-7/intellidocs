@@ -15,37 +15,17 @@ Auth (pick ONE, both are supported below):
    This avoids needing to upload a file to the host.
 """
 
-import os
-import json
-from pathlib import Path
-
 import firebase_admin
 from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
 
 from backend.config import ENV_FILE, PROJECT_ROOT
+from backend.database.firebase_config import resolve_firebase_credential
 
 load_dotenv(ENV_FILE)
 
-FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-
 if not firebase_admin._apps:
-    if FIREBASE_CREDENTIALS_JSON:
-        cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
-        cred = credentials.Certificate(cred_dict)
-    elif GOOGLE_APPLICATION_CREDENTIALS:
-        credentials_path = Path(GOOGLE_APPLICATION_CREDENTIALS)
-        if not credentials_path.is_absolute():
-            credentials_path = PROJECT_ROOT / credentials_path
-        cred = credentials.Certificate(credentials_path)
-    else:
-        raise ValueError(
-            "No Firebase credentials configured. Set either "
-            "FIREBASE_CREDENTIALS_JSON (recommended for deployment) or "
-            "GOOGLE_APPLICATION_CREDENTIALS (path to a local JSON key file)."
-        )
-
+    cred = resolve_firebase_credential(credentials.Certificate, project_root=PROJECT_ROOT)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -60,5 +40,3 @@ chats_collection = db.collection("chats")
 messages_collection = db.collection("messages")
 face_embeddings_collection = db.collection("face_embeddings")
 documents_collection = db.collection("documents")
-
-print("Firestore connected successfully.")

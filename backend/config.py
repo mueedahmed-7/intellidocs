@@ -9,8 +9,13 @@ from dotenv import load_dotenv
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_DIR.parent
 ENV_FILE = PROJECT_ROOT / ".env"
-UPLOAD_DIR = BACKEND_DIR / "uploads"
-CHROMA_DIR = BACKEND_DIR / "chroma_db"
+
+# Local development continues to use backend/; deployments can point this at a
+# mounted disk so uploads and vectors survive service restarts.
+_data_directory = Path(os.getenv("PERSISTENT_DATA_DIR", str(BACKEND_DIR))).expanduser()
+DATA_DIR = _data_directory if _data_directory.is_absolute() else (PROJECT_ROOT / _data_directory).resolve()
+UPLOAD_DIR = DATA_DIR / "uploads"
+CHROMA_DIR = DATA_DIR / "chroma_db"
 
 load_dotenv(ENV_FILE)
 

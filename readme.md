@@ -80,6 +80,14 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
+## Deploy
+
+The repository-root `render.yaml` deploys the FastAPI backend on Render. It installs Tesseract for OCR and `espeak-ng` for server-side text-to-speech, and mounts `/var/data` so uploads and Chroma vectors persist across restarts.
+
+Before deploying, set these Render secrets: `GROQ_API_KEY`, `FIREBASE_CREDENTIALS_JSON`, `JWT_SECRET_KEY`, and `ALLOWED_ORIGINS`. Set `ALLOWED_ORIGINS` to the exact HTTPS URL of the deployed frontend.
+
+Deploy `Frontend/` as a Vite static site (the included `vercel.json` supports Vercel SPA routing). Set `VITE_API_URL` to the public HTTPS URL of the backend **before** building the frontend. The provided `.env.example` files list the required names without containing secrets.
+
 ## Important limitations
 
 - RAG answers are document-grounded only; no usable context produces a controlled response.
