@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import msvcrt
+from pathlib import Path
 
 # pyrefly: ignore [missing-import]
 import numpy as np
@@ -16,6 +17,7 @@ _model_cache = {}
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
 
 def get_whisper_model(model_size: str = "tiny"):
@@ -224,6 +226,47 @@ def transcribe_audio(audio_data: np.ndarray) -> str:
                 os.remove(temp_wav_path)
 
             except Exception:
+                pass
+
+
+def transcribe_audio_file(
+    audio_bytes: bytes,
+    filename: str = "recording.webm",
+    language: str | None = None,
+    model_size: str | None = None,
+) -> str:
+    """Transcribe an audio file uploaded by the web application.
+
+    Whisper reads the file through FFmpeg, so this accepts the formats emitted
+    by browsers (usually WebM/Opus) as well as WAV, MP3, and M4A.  The audio is
+    written only to a temporary file and is deleted after transcription.
+    """
+    if not audio_bytes:
+        raise ValueError("The recording was empty.")
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise ValueError("The recording is too large. Please keep it under 25 MB.")
+
+    suffix = Path(filename or "recording.webm").suffix.lower()
+    if suffix not in {".webm", ".wav", ".mp3", ".m4a", ".ogg", ".mp4"}:
+        suffix = ".webm"
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+
+        model = get_whisper_model(model_size or os.getenv("WHISPER_MODEL", "tiny"))
+        options = {"fp16": False, "verbose": False}
+        if language:
+            options["language"] = language
+        result = model.transcribe(temp_path, **options)
+        return result.get("text", "").strip()
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
                 pass
 
 

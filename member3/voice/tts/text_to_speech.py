@@ -1,11 +1,52 @@
 # pyrefly: ignore [missing-import]
 import pyttsx3
+import os
+import re
 import threading
 
 
 _engine_lock = threading.Lock()
 _speech_run_lock = threading.Lock()
 _active_engine = None
+
+DEFAULT_VOICE_HINTS = ("aria", "jenny", "zira", "hazel", "david", "mark")
+DEFAULT_RATE = 155
+
+
+def _voice_hints() -> tuple[str, ...]:
+    raw_hints = os.getenv("TTS_VOICE_HINTS", ",".join(DEFAULT_VOICE_HINTS))
+    hints = tuple(item.strip().lower() for item in raw_hints.split(",") if item.strip())
+    return hints or DEFAULT_VOICE_HINTS
+
+
+def _speech_rate() -> int:
+    try:
+        rate = int(os.getenv("TTS_RATE", str(DEFAULT_RATE)))
+    except ValueError:
+        return DEFAULT_RATE
+    return min(max(rate, 120), 250)
+
+
+def _select_voice(voices, hints: tuple[str, ...]):
+    """Prefer a natural installed SAPI voice without requiring a fixed ID."""
+    for hint in hints:
+        for voice in voices:
+            identity = f"{getattr(voice, 'name', '')} {getattr(voice, 'id', '')}".lower()
+            if hint in identity:
+                return voice
+    return None
+
+
+def _plain_speech_text(text: str) -> str:
+    """Make Markdown/chat text sound like normal prose when read aloud."""
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def stop_speaking() -> bool:
@@ -33,38 +74,20 @@ def get_zira_engine():
         pyttsx3.Engine: Configured Zira engine.
     """
 
+    # Do not require a particular Windows voice. Many local installations do
+    # not include Zira, while the system default is still a usable TTS voice.
     engine = pyttsx3.init("sapi5")
 
     voices = engine.getProperty("voices")
 
-    zira_voice = None
-
-    for voice in voices:
-
-        if voice.name and "zira" in voice.name.lower():
-
-            zira_voice = voice
-            break
-
-    if zira_voice is None:
-
-        engine.stop()
-
-        raise RuntimeError(
-            "Microsoft Zira voice was not found. "
-            "Please make sure the Windows Zira voice is installed."
-        )
-
-    # Select Microsoft Zira
-    engine.setProperty(
-        "voice",
-        zira_voice.id
-    )
+    selected_voice = _select_voice(voices, _voice_hints())
+    if selected_voice is not None:
+        engine.setProperty("voice", selected_voice.id)
 
     # Slightly slower and easier to understand
     engine.setProperty(
         "rate",
-        135
+        _speech_rate()
     )
 
     # Full volume
@@ -110,7 +133,7 @@ def speak_text(text: str) -> None:
             with _engine_lock:
                 _active_engine = engine
 
-            engine.say(text.strip())
+            engine.say(_plain_speech_text(text))
             engine.runAndWait()
 
         except Exception as e:

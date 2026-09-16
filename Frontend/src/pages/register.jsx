@@ -410,7 +410,7 @@ function Register() {
 
     } catch (err) {
       console.error(err);
-      setError("Could not reach the backend. Is the server running?");
+      setError(err.message || "Registration failed. Please try again.");
       setSubmitting(false);
     }
   };

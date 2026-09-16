@@ -176,9 +176,7 @@ function Login() {
 
       console.error("Login error:", error);
 
-      setError(
-        "Could not connect to the server. Make sure FastAPI is running."
-      );
+      setError(error.message || "Login failed. Please try again.");
 
     } finally {
 

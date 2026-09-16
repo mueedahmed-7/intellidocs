@@ -7,7 +7,7 @@ from pathlib import Path
 
 from backend.config import MAX_UPLOAD_SIZE_BYTES, UPLOAD_DIR
 from backend.database.postgres_db import documents_collection
-from backend.services import embedding_manager, loader, splitter, vector_store
+from backend.services import embedding_manager, get_vector_store, loader, splitter
 
 
 class DocumentValidationError(ValueError):
@@ -40,7 +40,14 @@ class DocumentService:
         self.loader = document_loader or loader
         self.splitter = document_splitter or splitter
         self.embedding_manager = embeddings or embedding_manager
-        self.vector_store = vectors or vector_store
+        self._vector_store = vectors
+
+    @property
+    def vector_store(self):
+        """Delay Chroma opening until ingestion, retrieval, or deletion needs it."""
+        if self._vector_store is None:
+            self._vector_store = get_vector_store()
+        return self._vector_store
 
     @staticmethod
     def _now() -> str:

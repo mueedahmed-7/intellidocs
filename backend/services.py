@@ -9,18 +9,25 @@ from backend.config import groq_api_key
 
 
 loader = DocumentLoader()
-
 splitter = DocumentSplitter()
-
 embedding_manager = EmbeddingManager()
-
-vector_store = VectorStore()
-
-retriever = Retriever(embedding_manager, vector_store)
-
 prompt_builder = PromptBuilder()
+_vector_store = _retriever = _chat_engine = None
 
-_chat_engine = None
+
+def get_vector_store() -> VectorStore:
+    """Open local Chroma only when a document or RAG query needs it."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore()
+    return _vector_store
+
+
+def get_retriever() -> Retriever:
+    global _retriever
+    if _retriever is None:
+        _retriever = Retriever(embedding_manager, get_vector_store())
+    return _retriever
 
 
 def get_chat_engine() -> ChatEngine:
@@ -29,7 +36,7 @@ def get_chat_engine() -> ChatEngine:
 
     if _chat_engine is None:
         _chat_engine = ChatEngine(
-            retriever=retriever,
+            retriever=get_retriever(),
             prompt_builder=prompt_builder,
             api_key=groq_api_key(),
         )

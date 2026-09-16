@@ -1142,7 +1142,7 @@ function Chat() {
   };
 
   // ============================================================
-  // TEXT TO SPEECH -> POST /voice/speak
+  // TEXT TO SPEECH -> local Windows SAPI backend
   // ============================================================
 
   const handleStopSpeak = async () => {
@@ -1161,8 +1161,6 @@ function Chat() {
         method: "POST",
       });
     } catch (error) {
-      // The local request was still cancelled, even if the stop endpoint is
-      // temporarily unreachable.
       console.error("Could not stop server-side speech:", error);
     }
   };
@@ -1175,6 +1173,10 @@ function Chat() {
 
     if (speakingId) {
       await handleStopSpeak();
+    }
+
+    if (!text?.trim()) {
+      setStatusMessage("There is no text to read aloud.");
       return;
     }
 
@@ -1225,6 +1227,8 @@ function Chat() {
         keepalive: true,
       }).catch(() => {});
     }
+    manuallyStoppedRef.current = true;
+    recognitionRef.current?.abort();
   }, []);
 
   // ============================================================
@@ -1233,24 +1237,18 @@ function Chat() {
 
   const handleMic = () => {
     if (isLoadingHistory || isLoadingConversation) return;
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setStatusMessage(
-        "Speech recognition is not supported. Please use Google Chrome."
-      );
+      setStatusMessage("Speech recognition is not supported. Please use Google Chrome.");
       return;
     }
 
-    // Stop microphone if already listening
     if (listening) {
       manuallyStoppedRef.current = true;
-
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-
+      recognitionRef.current?.stop();
       setListening(false);
       setStatusMessage("Recording stopped.");
       return;
@@ -1258,8 +1256,7 @@ function Chat() {
 
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
-
-    recognition.lang = "en-US";
+    recognition.lang = navigator.language || "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
@@ -1267,13 +1264,6 @@ function Chat() {
     manuallyStoppedRef.current = false;
     setListening(true);
     setStatusMessage("Listening... Speak your question.");
-
-    try {
-      recognition.start();
-    } catch (error) {
-      console.error("Could not start recognition:", error);
-      setListening(false);
-    }
 
     recognition.onstart = () => {
       setListening(true);
@@ -1284,10 +1274,9 @@ function Chat() {
       let finalTranscript = "";
       let interimTranscript = "";
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-
-        if (event.results[i].isFinal) {
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0].transcript;
+        if (event.results[index].isFinal) {
           finalTranscript += transcript;
         } else {
           interimTranscript += transcript;
@@ -1295,48 +1284,55 @@ function Chat() {
       }
 
       if (finalTranscript) {
-        setInputText((previous) => (previous + finalTranscript + " ").trimStart());
+        setInputText((previous) => `${previous}${previous && !previous.endsWith(" ") ? " " : ""}${finalTranscript.trim()}`);
       }
-
       if (interimTranscript) {
-        setStatusMessage(`Listening: ${interimTranscript}`);
+        setStatusMessage(`Listening: ${interimTranscript.trim()}`);
       }
     };
 
     recognition.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
-
-      if (event.error === "not-allowed") {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        manuallyStoppedRef.current = true;
         setListening(false);
-        setStatusMessage("Microphone permission was denied.");
-        return;
-      }
-
-      if (event.error === "no-speech") {
+        setStatusMessage("Microphone permission was denied. Allow it in your browser site settings.");
+      } else if (event.error === "audio-capture") {
+        manuallyStoppedRef.current = true;
+        setListening(false);
+        setStatusMessage("No microphone is available. Check your Windows input device.");
+      } else if (event.error === "no-speech") {
         setStatusMessage("No speech detected. Keep speaking or try again.");
-        return;
+      } else if (event.error !== "aborted") {
+        setStatusMessage(`Speech recognition error: ${event.error}`);
       }
-
-      if (event.error === "aborted") {
-        return;
-      }
-
-      setStatusMessage(`Speech recognition error: ${event.error}`);
     };
 
     recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
       if (!manuallyStoppedRef.current) {
         try {
           recognition.start();
           setListening(true);
           setStatusMessage("Listening... Continue speaking.");
-        } catch (error) {
-          console.log("Recognition restart failed:", error);
+        } catch {
+          setListening(false);
+          setStatusMessage("Speech recognition stopped. Click the microphone to try again.");
         }
       } else {
+        recognitionRef.current = null;
         setListening(false);
       }
     };
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error("Could not start speech recognition:", error);
+      manuallyStoppedRef.current = true;
+      setListening(false);
+      setStatusMessage("The microphone could not be opened. Check browser permission and try again.");
+    }
   };
 
   // ============================================================
@@ -1440,15 +1436,6 @@ function Chat() {
 
               {message.role === "bot" && (
                 <>
-                {message.sources?.length > 0 && (
-                  <div className="message-sources">
-                    <span>Sources</span>{message.sources.map((source) => (
-                      <div key={`${source.document_id}-${source.chunk_index}`}>
-                        <span aria-hidden="true">📄</span><span>{source.filename}</span><small>{source.page ? `Page ${source.page}` : `Chunk ${source.chunk_index}`}</small>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <button
                   className="speak-button"
                   onClick={() => handleSpeak(message.id, message.text)}
@@ -1493,16 +1480,6 @@ function Chat() {
             accept=".pdf,.docx,.txt,.md"
             style={{ display: "none" }}
           />
-
-          <button
-            className="upload-button"
-            type="button"
-            onClick={handleUploadClick}
-            disabled={isUploading}
-            title="Upload a document"
-          >
-            {isUploading ? "⏳" : "📎"}
-          </button>
 
           <button
             className={listening ? "mic-button listening" : "mic-button"}
@@ -1561,7 +1538,7 @@ function Chat() {
                 } : undefined}
               >
                 <div className="document-row-main"><span className="document-icon" aria-hidden="true">📄</span><span title={document.original_filename}>{document.original_filename}</span>{selectedDocumentIds.includes(document.document_id) && <b aria-label="Selected">✓</b>}</div>
-                <div className="document-row-meta"><small className={`document-status ${document.status}`}>{document.status}</small><small>{document.chunk_count} chunks</small></div>
+                <div className="document-row-meta"><small className={`document-status ${document.status}`}>{document.status}</small></div>
                 <button type="button" onClick={(event) => { event.stopPropagation(); handleDeleteDocument(document.document_id, document.original_filename); }} disabled={document.status === "processing" || isUploading} aria-label={`Delete ${document.original_filename}`} title="Delete document">⌫</button>
               </div>
             ))}

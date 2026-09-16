@@ -1,8 +1,7 @@
 // Central place for the backend URL.
-// Set VITE_API_URL in a .env file (Vite requires the VITE_ prefix).
-// Locally: VITE_API_URL=http://127.0.0.1:8000
-// In prod (Vercel/Netlify): VITE_API_URL=https://your-backend.onrender.com
-export const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+// The sole browser-side source of truth for the backend URL.
+// A local Frontend/.env overrides this with VITE_API_BASE_URL.
+export const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 const TOKEN_KEY = "access_token";
 const USER_KEY = "authenticated_user";
@@ -49,10 +48,18 @@ export async function apiFetch(path, options = {}, { auth = false } = {}) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Cannot connect to the local IntelliDocs server. Make sure the backend is running.",
+        { cause: error },
+      );
+    }
+    throw error;
+  }
 
   if (auth && response.status === 401) {
     clearSession();

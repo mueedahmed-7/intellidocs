@@ -59,6 +59,25 @@ class HybridChatTests(unittest.TestCase):
         self.assertTrue(ChatEngine.is_explicit_document_request("What does this voucher say?"))
         self.assertFalse(ChatEngine.is_explicit_document_request("What is machine learning?"))
 
+    def test_selected_roadmap_questions_use_document_mode(self):
+        self.assertTrue(
+            ChatEngine.should_use_document_mode(
+                "Which courses are in semester 3?", True, []
+            )
+        )
+
+    def test_selected_document_uses_rag_for_arbitrary_document_questions(self):
+        self.assertTrue(
+            ChatEngine.should_use_document_mode(
+                "What does section two say about my next steps?", True, []
+            )
+        )
+        self.assertTrue(
+            ChatEngine.should_use_document_mode(
+                "What are the prerequisite subjects?", True, []
+            )
+        )
+
     def test_selected_voucher_switches_from_rag_to_generic_without_retrieval(self):
         source = RetrievalResult("Voucher number is 1629003.", "voucher-id", "voucher.pdf", 0, 1, 0.2)
         class Retriever:

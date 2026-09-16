@@ -3,11 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes import router
 from backend.config import allowed_origins
-from backend.database.postgres import init_database
 from backend.Services.face_service import FaceService, FaceStorageError, FaceValidationError
 from backend.utils.auth_dependency import get_current_user_id
 from backend.utils.jwt_handler import create_access_token
 from member3.voice.tts.text_to_speech import speak_text, stop_speaking
+from member3.voice.stt.speech_to_text import transcribe_audio_file
 
 
 app = FastAPI(
@@ -27,12 +27,6 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
-
-@app.on_event("startup")
-def initialize_database():
-    """Validate DATABASE_URL and create the application tables if needed."""
-    init_database()
 
 
 @app.get("/")
@@ -112,3 +106,22 @@ def voice_stop():
         "success": True,
         "message": "Speech stopped." if stopped else "No speech was active.",
     }
+
+
+@app.post("/voice/transcribe")
+async def voice_transcribe(audio: UploadFile = File(...), language: str | None = Form(None)):
+    """Transcribe a browser recording with the locally installed Whisper model."""
+    try:
+        audio_bytes = await audio.read()
+        text = transcribe_audio_file(audio_bytes, audio.filename or "recording.webm", language)
+        if not text:
+            return {"success": False, "message": "No speech was detected.", "text": ""}
+        return {"success": True, "text": text}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        print(f"[STT ERROR] {error}")
+        raise HTTPException(
+            status_code=503,
+            detail="Local speech-to-text is unavailable. Ensure Whisper and FFmpeg are installed.",
+        ) from error

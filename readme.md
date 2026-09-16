@@ -13,7 +13,7 @@ A FastAPI and React application for authenticated, document-grounded chat. Users
 
 ## Prerequisites
 
-- Windows PowerShell, Python, Node.js/npm, and PostgreSQL 15+ (or a hosted PostgreSQL database).
+- Windows PowerShell, Python, and Node.js/npm.
 - YuNet and SFace ONNX models in `member3/face/models/`. Missing models may download on first face use.
 
 ## Configuration
@@ -28,21 +28,20 @@ GROQ_API_KEY=your-groq-key
 MAX_UPLOAD_SIZE_MB=10
 RAG_DISTANCE_THRESHOLD=1.6
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 ```
 
-For local PostgreSQL on Windows, create the database once (enter your own
-PostgreSQL password when prompted):
-
-```powershell
-psql -U postgres -d postgres -c "CREATE DATABASE intellidocs;"
-```
-
-Then set `DATABASE_URL` in `.env` to
-`postgresql+psycopg://postgres:<PASSWORD>@localhost:5432/intellidocs`.
-The application creates its tables automatically on startup.
+For local use, no database setup is required. When `DATABASE_URL` is omitted,
+the application creates and uses `local_data/intellidocs.sqlite3`
+automatically. Set `DATABASE_URL` only when you deliberately want to use a
+PostgreSQL database instead.
 
 The frontend optionally reads `VITE_API_URL`; it defaults to `http://127.0.0.1:8000` locally.
+Text-to-speech plays through the browser using the installed system voice.
+Speech-to-text records in the browser and transcribes locally in FastAPI with
+Whisper, so it does not depend on an online browser speech-recognition service.
+Use Chrome or Edge and grant microphone permission. Whisper also requires
+FFmpeg on your PATH; the default `tiny` model is downloaded once on first use.
+Face capture also requires a browser camera permission.
 
 ## OCR for scanned PDFs (Windows)
 
@@ -88,14 +87,6 @@ cd Frontend
 npm.cmd run lint
 npm.cmd run build
 ```
-
-## Deploy
-
-The repository-root `render.yaml` deploys the FastAPI backend on Render. It installs Tesseract for OCR and `espeak-ng` for server-side text-to-speech, and mounts `/var/data` so uploads and Chroma vectors persist across restarts.
-
-Create a Render PostgreSQL service, then set the backend's `DATABASE_URL` from its internal database URL (or provide another managed PostgreSQL connection URL). Also set `GROQ_API_KEY`, `JWT_SECRET_KEY`, and `ALLOWED_ORIGINS`. Set `ALLOWED_ORIGINS` to the exact HTTPS URL of the deployed frontend. The backend creates its application tables at startup; it never needs Firebase credentials.
-
-Deploy `Frontend/` as a Vite static site (the included `vercel.json` supports Vercel SPA routing). Set `VITE_API_URL` to the public HTTPS URL of the backend **before** building the frontend. The provided `.env.example` files list the required names without containing secrets.
 
 ## Important limitations
 

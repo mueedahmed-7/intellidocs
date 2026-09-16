@@ -279,7 +279,7 @@ def chat(
         # document question: routing is deliberately decided per user message.
         document_mode = ChatEngine.should_use_document_mode(
             request.question,
-            has_selected_documents=bool(eligible_document_ids),
+            has_selected_documents=bool(request.document_ids),
             history_messages=history_messages,
         )
 

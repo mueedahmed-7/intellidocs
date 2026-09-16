@@ -25,7 +25,9 @@ class ChatEngine:
     # A small set of factual fields commonly asked about in uploaded paperwork.
     DOCUMENT_FACT_PATTERN = re.compile(
         r"\b(voucher|invoice|receipt|statement|form|fee|due date|deadline|amount|"
-        r"voucher number|reference number|page|signed|signature)\b",
+        r"voucher number|reference number|page|signed|signature|roadmap|semester|"
+        r"course|courses|subject|subjects|curriculum|prerequisite|prerequisites|"
+        r"credit hours|elective|program|degree|module|schedule)\b",
         re.IGNORECASE,
     )
     DOCUMENT_FOLLOW_UP_PATTERN = re.compile(
@@ -68,8 +70,16 @@ class ChatEngine:
             return True
         if cls.GENERIC_KNOWLEDGE_PATTERN.search(question):
             return False
-        if not has_selected_documents:
-            return False
+        # Selecting one or more documents is an explicit request to ask those
+        # documents. This works for every supported file type and avoids
+        # relying on document-specific keyword lists (for example, a roadmap
+        # versus a contract). Clear general-knowledge prompts still use chat.
+        if has_selected_documents:
+            # Do not let a vague "it/that" after a general answer switch the
+            # conversation back to RAG merely because a document is selected.
+            if cls.DOCUMENT_FOLLOW_UP_PATTERN.search(question):
+                return cls.is_document_follow_up(question, history_messages)
+            return True
         return bool(
             cls.DOCUMENT_FACT_PATTERN.search(question)
             or cls.is_document_follow_up(question, history_messages)

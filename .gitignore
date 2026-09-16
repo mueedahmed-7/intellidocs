@@ -23,6 +23,7 @@ serviceAccountKey*.json
 .env
 .env.*
 !.env.example
+local_data/
 *.json
 *.pem
 *.key

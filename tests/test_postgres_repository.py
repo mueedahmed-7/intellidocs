@@ -13,9 +13,15 @@ from backend.database.postgres_db import (
     messages_collection,
     users_collection,
 )
+from backend.database.postgres import init_database
 
 
 class PostgreSQLRepositoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Runtime schema creation is deliberately explicit; tests opt in too.
+        init_database()
+
     def setUp(self):
         self.user_id = str(uuid4())
         users_collection.document(self.user_id).set({
