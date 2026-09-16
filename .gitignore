@@ -27,3 +27,12 @@ local_data/
 *.json
 *.pem
 *.key
+
+# Private local application data — never publish uploads, vector databases,
+# biometric embeddings, or local server logs.
+backend/uploads/
+backend/chroma_db/
+chroma_db/
+data/
+member3/face/data/
+.tmp-logs/

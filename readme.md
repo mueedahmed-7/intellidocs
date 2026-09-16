@@ -1,86 +1,77 @@
-﻿# AI-Powered RAG Chatbot
+# IntelliDocs
 
-A FastAPI and React application for authenticated, document-grounded chat. Users register with email and password, complete required face registration, upload documents, and ask questions grounded in their own ready documents.
+IntelliDocs is a local-first document intelligence application. It combines a React/Vite interface with a FastAPI backend, PostgreSQL, Chroma, document RAG, browser voice input, local Windows text-to-speech, and required face registration.
+
+## Features
+
+- Secure account registration, JWT sessions, and required face registration/login.
+- Upload and privately index PDF, DOCX, TXT, and Markdown documents.
+- Document-grounded RAG answers for selected documents.
+- General AI chat for non-document questions.
+- Native text extraction with OCR fallback for scanned PDFs.
+- Browser speech-to-text and local Windows text-to-speech.
+- Persistent PostgreSQL metadata, local uploads, and local Chroma vectors.
 
 ## Architecture
 
-- `Frontend/`: Vite/React application for sessions, face capture, documents, conversations, and voice controls.
-- `backend/`: FastAPI routes, services, JWT utilities, PostgreSQL access, and RAG orchestration.
-- `backend/Services/`: authentication, document lifecycle, conversation lifecycle, and web face records.
-- `backend/rag/`: loading, splitting, embeddings, Chroma retrieval, prompts, and Groq chat engine.
-- `member3/face/`: YuNet/SFace utilities. Three-angle scripts and `.npy` data are standalone/demo tooling; the web app stores embeddings in PostgreSQL.
-- `member3/voice/`: existing local voice utilities used by web voice endpoints.
+```text
+React/Vite browser
+        |
+     FastAPI
+   /    |    \
+PostgreSQL  local uploads  Chroma vectors
+        |
+  Groq chat model / local face and OCR services
+```
 
-## Prerequisites
+## Local setup
 
-- Windows PowerShell, Python, and Node.js/npm.
-- YuNet and SFace ONNX models in `member3/face/models/`. Missing models may download on first face use.
+This repository intentionally contains no credentials, personal documents, vector databases, or biometric records. See [LOCAL_SETUP.md](LOCAL_SETUP.md) for the complete Windows PowerShell setup guide.
+
+Quick start after first-time setup:
+
+```powershell
+# Terminal 1
+.\scripts\start-backend.ps1
+
+# Terminal 2
+.\scripts\start-frontend.ps1
+```
+
+Open `http://localhost:5173`.
 
 ## Configuration
 
-Create a root `.env` file (never commit it):
-
-```env
-JWT_SECRET_KEY=use-a-long-random-secret
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-GROQ_API_KEY=your-groq-key
-MAX_UPLOAD_SIZE_MB=10
-RAG_DISTANCE_THRESHOLD=1.6
-ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
-
-For local use, no database setup is required. When `DATABASE_URL` is omitted,
-the application creates and uses `local_data/intellidocs.sqlite3`
-automatically. Set `DATABASE_URL` only when you deliberately want to use a
-PostgreSQL database instead.
-
-The frontend optionally reads `VITE_API_URL`; it defaults to `http://127.0.0.1:8000` locally.
-Text-to-speech plays through the browser using the installed system voice.
-Speech-to-text records in the browser and transcribes locally in FastAPI with
-Whisper, so it does not depend on an online browser speech-recognition service.
-Use Chrome or Edge and grant microphone permission. Whisper also requires
-FFmpeg on your PATH; the default `tiny` model is downloaded once on first use.
-Face capture also requires a browser camera permission.
-
-## OCR for scanned PDFs (Windows)
-
-Digital PDFs use normal text extraction. If a PDF page has insufficient usable text, the backend automatically falls back to local English OCR and feeds the recognised text into the same document/RAG pipeline.
-
-1. Install [Tesseract OCR for Windows](https://github.com/UB-Mannheim/tesseract/wiki).
-2. Add `tesseract.exe` to your system `PATH`, or set `TESSERACT_CMD` in the root `.env` file. For example only: `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe`.
-3. Install project Python dependencies, including `pytesseract`, with `pip install -r requirements.txt`.
-
-Tesseract is not required for backend startup or normal text-based documents. A scanned PDF requiring OCR fails safely if the engine is unavailable. OCR is English-only in the current version.
-
-## Run locally
+Copy the provided examples; never commit real `.env` files:
 
 ```powershell
-cd "C:\Users\Mueed Ahmed\Desktop\AI-Powered-Rag-Chatbot"
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload
+Copy-Item .env.example .env
+Copy-Item Frontend\.env.example Frontend\.env
 ```
 
-In another PowerShell window:
+Required backend configuration includes:
+
+- `DATABASE_URL` — local PostgreSQL database connection.
+- `JWT_SECRET_KEY` — long random signing secret.
+- `GROQ_API_KEY` — required for chat generation.
+- `PERSISTENT_DATA_DIR=data` — local uploads and Chroma data.
+
+## Data and privacy
+
+The following are deliberately ignored by Git:
+
+- `.env` files and credentials
+- Uploaded documents
+- Chroma/vector databases
+- PostgreSQL data
+- Face embeddings and local face data
+- Temporary logs
+
+Do not add real user documents, database dumps, tokens, private keys, or biometric data to Git.
+
+## Tests
 
 ```powershell
-cd "C:\Users\Mueed Ahmed\Desktop\AI-Powered-Rag-Chatbot\Frontend"
-npm.cmd install
-npm.cmd run dev
-```
-
-## Main workflow
-
-1. Register an account. New users are sent to required face registration; there is no skip flow.
-2. Sign in with password or the established face-login flow. Both create the same JWT-backed session.
-3. Upload PDF, DOCX, TXT, or Markdown documents. Only ready documents may be used for RAG.
-4. Select ready documents (or leave selection empty for all ready documents), then ask a question.
-5. Conversations retain answers and source metadata. They can be reopened, renamed, and deleted.
-
-## Tests and checks
-
-```powershell
-cd "C:\Users\Mueed Ahmed\Desktop\AI-Powered-Rag-Chatbot"
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd Frontend
@@ -88,9 +79,6 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-## Important limitations
+## Security note
 
-- RAG answers are document-grounded only; no usable context produces a controlled response.
-- Face login uses one web capture and PostgreSQL embeddings. It has no liveness or anti-spoofing protection and is not high-security biometric authentication.
-- `backend/chroma_db`, existing uploads, legacy Chroma vectors, and `member3/face/data` are preserved legacy/local data and are not automatically migrated or deleted.
-- The historical filename `backend/rag/reteriver.py` remains for import stability.
+Face authentication is a convenience feature, not a high-security biometric or liveness-detection system. Use strong passwords, keep secrets outside Git, and rotate any key immediately if it is ever exposed.
