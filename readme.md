@@ -31,6 +31,20 @@ I built the React/FastAPI application and its RAG pipeline: document extraction 
 
 Watch the recorded walkthrough: [IntelliDocs v1.0.0 — Demo Release](https://github.com/mueedahmed-7/intellidocs/releases/tag/V1.0.0).
 
+## Screenshots
+
+### Account creation
+
+![IntelliDocs account-creation screen](docs/images/account-creation.png)
+
+### Face registration
+
+![IntelliDocs face-registration screen](docs/images/face-registration.png)
+
+### General chat
+
+![IntelliDocs general-chat response](docs/images/general-chat.png)
+
 ## How It Works
 
 ### Document ingestion and grounded answers
