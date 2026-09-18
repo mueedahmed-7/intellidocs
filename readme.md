@@ -27,16 +27,9 @@ I built the React/FastAPI application and its RAG pipeline: document extraction 
 - Support separate general AI chat, persisted conversations, Markdown rendering, JWT/bcrypt authentication, and ownership-aware document cleanup.
 - Offer browser camera capture with **YuNet + SFace** face matching, browser Web Speech API input, pyttsx3 answer playback, and a Whisper transcription endpoint.
 
-## Demo / Screenshots
+## Demo
 
 Watch the recorded walkthrough: [IntelliDocs v1.0.0 — Demo Release](https://github.com/mueedahmed-7/intellidocs/releases/tag/V1.0.0).
-
-No product screenshots are currently tracked in this repository.
-
-<!-- Add a screenshot of the chat workspace here: docs/images/chat-workspace.png -->
-<!-- Add a screenshot of document upload and a grounded answer here: docs/images/document-rag.png -->
-
-For a portfolio-ready update, add two redacted screenshots: one showing the chat workspace with selected documents, and one showing document upload alongside a grounded answer. Do not use real personal documents or credentials.
 
 ## How It Works
 
@@ -267,7 +260,7 @@ Both commands completed successfully in the audited checkout.
 - Add asynchronous ingestion with progress reporting for larger document collections.
 - Add structured source citations in the UI, evaluation datasets, and retrieval-quality measurements.
 - Add multi-language OCR and configurable embedding/LLM providers.
-- Add CI automation and a public, redacted product demo.
+- Add CI automation and redacted UI screenshots.
 
 ## Contributors
 
