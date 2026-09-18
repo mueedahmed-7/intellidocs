@@ -135,7 +135,7 @@ scripts/               # Windows PowerShell startup scripts
 ### 1. Clone and create a virtual environment
 
 ```powershell
-git clone <YOUR-REPOSITORY-URL>
+git clone https://github.com/mueedahmed-7/intellidocs.git
 cd AI-Powered-Rag-Chatbot
 
 py -3.13 -m venv .venv
