@@ -29,11 +29,12 @@ I built the React/FastAPI application and its RAG pipeline: document extraction 
 
 ## Demo / Screenshots
 
-No product screenshots or demo recordings are currently tracked in this repository.
+Watch the recorded walkthrough: [IntelliDocs v1.0.0 — Demo Release](https://github.com/mueedahmed-7/intellidocs/releases/tag/V1.0.0).
+
+No product screenshots are currently tracked in this repository.
 
 <!-- Add a screenshot of the chat workspace here: docs/images/chat-workspace.png -->
 <!-- Add a screenshot of document upload and a grounded answer here: docs/images/document-rag.png -->
-<!-- Add a short public demo link here when available. -->
 
 For a portfolio-ready update, add two redacted screenshots: one showing the chat workspace with selected documents, and one showing document upload alongside a grounded answer. Do not use real personal documents or credentials.
 
